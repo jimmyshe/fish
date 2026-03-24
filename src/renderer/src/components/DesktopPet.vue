@@ -2,12 +2,19 @@
   <div class="pet-wrapper" @mousedown.left="startDrag" @contextmenu.prevent="onRightClick">
 
     <!-- 对话气泡 -->
-    <div class="bubble-wrap" :class="{ 'sleeping-bubble': isSleeping }">
-      <div class="speech-bubble" :class="effectiveMoodClass">
-        <div class="bubble-text" :class="{ 'interact-flash': !!interactMessage }">
-          {{ displayMessage }}
-        </div>
-        <div class="bubble-subtext" v-if="displaySubMessage">{{ displaySubMessage }}</div>
+    <div class="bubble-wrap" :class="{ 'sleeping-bubble': isSleeping && !showWaterReminder }">
+      <div class="speech-bubble" :class="[effectiveMoodClass, { 'water-alert': showWaterReminder }]">
+        <template v-if="showWaterReminder">
+          <div class="bubble-text water-pulse">💧 该喝水啦！</div>
+          <div class="bubble-subtext">点下面确认才能消失哦~</div>
+          <button class="water-btn" @mousedown.stop @click.stop="confirmWaterDrank">✓ 我喝了！</button>
+        </template>
+        <template v-else>
+          <div class="bubble-text" :class="{ 'interact-flash': !!interactMessage }">
+            {{ displayMessage }}
+          </div>
+          <div class="bubble-subtext" v-if="displaySubMessage">{{ displaySubMessage }}</div>
+        </template>
       </div>
     </div>
 
@@ -262,6 +269,26 @@ function triggerRainbow() {
   rainbowTimer = setTimeout(() => { isRainbow.value = false }, 5000)
 }
 
+// ── 喝水提醒 ──────────────────────────────────────
+const showWaterReminder = ref(false)
+let waterReminderTimer: ReturnType<typeof setTimeout> | null = null
+const WATER_INTERVAL = 45 * 60 * 1000 // 45分钟
+
+function scheduleWaterReminder() {
+  if (waterReminderTimer) clearTimeout(waterReminderTimer)
+  waterReminderTimer = setTimeout(() => {
+    showWaterReminder.value = true
+    spawnParticles(['💧', '💦', '💧'], 4, 'heart')
+  }, WATER_INTERVAL)
+}
+
+function confirmWaterDrank() {
+  showWaterReminder.value = false
+  showMsg('棒棒！多喝水 💪', 2500)
+  spawnParticles(['💧', '✨', '💪', '⭐'], 5, 'rainbow')
+  scheduleWaterReminder()
+}
+
 // ── 随机自言自语 ──────────────────────────────────
 const monologues = [
   '今天的水怎么这么浑浊...',
@@ -433,12 +460,13 @@ onMounted(async () => {
   resetSleepTimer()
   scheduleMonologue()
   scheduleDrift()
+  scheduleWaterReminder()
 })
 
 onUnmounted(() => {
   clearInterval(clockTimer)
   if (zzzInterval) clearInterval(zzzInterval)
-  ;[interactTimer, scaredTimer, sleepTimer, comboResetTimer, rainbowTimer]
+  ;[interactTimer, scaredTimer, sleepTimer, comboResetTimer, rainbowTimer, waterReminderTimer]
     .forEach(t => t && clearTimeout(t))
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', stopDrag)
@@ -562,6 +590,37 @@ async function saveSettings() {
 .speech-bubble.sad     { border-color: rgba(162,155,254,0.6); background: rgba(248,246,255,0.95); }
 .speech-bubble.scared  { border-color: rgba(255,118,117,0.7); background: rgba(255,245,243,0.95); }
 .speech-bubble.sleeping{ border-color: rgba(178,190,195,0.5); background: rgba(245,246,250,0.92); }
+.speech-bubble.water-alert {
+  border-color: rgba(116,185,255,0.8) !important;
+  background: rgba(236,246,255,0.97) !important;
+  animation: water-border-pulse 1.5s ease-in-out infinite;
+}
+@keyframes water-border-pulse {
+  0%,100% { box-shadow: 0 4px 16px rgba(0,0,0,0.15), 0 0 0 0 rgba(116,185,255,0.4); }
+  50%      { box-shadow: 0 4px 16px rgba(0,0,0,0.15), 0 0 0 6px rgba(116,185,255,0); }
+}
+
+.water-pulse {
+  animation: text-pop 1s ease-in-out infinite alternate;
+}
+
+.water-btn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 5px 0;
+  background: linear-gradient(135deg, #74b9ff, #0984e3);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  transition: opacity 0.15s, transform 0.1s;
+  display: block;
+}
+.water-btn:hover  { opacity: 0.9; transform: scale(1.03); }
+.water-btn:active { transform: scale(0.97); }
 
 .bubble-text {
   font-size: 15px; font-weight: 700; color: #2d3436;
