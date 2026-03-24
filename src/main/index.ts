@@ -7,6 +7,7 @@ interface Config {
   workEndTime: string
   windowX: number
   windowY: number
+  autoLaunch: boolean
 }
 
 // 简易持久化存储
@@ -21,12 +22,12 @@ function getConfigPath(): string {
 function loadConfig(): Config {
   const path = getConfigPath()
   if (!existsSync(path)) {
-    return { workEndTime: '18:00', windowX: -1, windowY: -1 }
+    return { workEndTime: '18:00', windowX: -1, windowY: -1, autoLaunch: false }
   }
   try {
     return JSON.parse(readFileSync(path, 'utf-8')) as Config
   } catch {
-    return { workEndTime: '18:00', windowX: -1, windowY: -1 }
+    return { workEndTime: '18:00', windowX: -1, windowY: -1, autoLaunch: false }
   }
 }
 
@@ -87,6 +88,15 @@ function createWindow(): void {
   })
 }
 
+function applyAutoLaunch(enabled: boolean): void {
+  // 开发模式下路径不对，仅生产包生效
+  if (is.dev) return
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    name: '摸鱼宠物'
+  })
+}
+
 function createTray(): void {
   // 1x1 透明图标占位，实际用 emoji 作为 tooltip
   const icon = nativeImage.createEmpty()
@@ -115,6 +125,17 @@ function updateTrayMenu(): void {
         } else {
           mainWindow?.show()
         }
+      }
+    },
+    {
+      label: '🚀 开机自启动',
+      type: 'checkbox',
+      checked: config.autoLaunch ?? false,
+      click: (item) => {
+        config.autoLaunch = item.checked
+        saveConfig(config)
+        applyAutoLaunch(item.checked)
+        updateTrayMenu()
       }
     },
     { type: 'separator' },
@@ -167,6 +188,17 @@ ipcMain.on('show-context-menu', () => {
         }
       }
     },
+    {
+      label: '🚀 开机自启动',
+      type: 'checkbox',
+      checked: config.autoLaunch ?? false,
+      click: (item) => {
+        config.autoLaunch = item.checked
+        saveConfig(config)
+        applyAutoLaunch(item.checked)
+        updateTrayMenu()
+      }
+    },
     { type: 'separator' },
     {
       label: '❌ 退出',
@@ -181,6 +213,9 @@ ipcMain.on('quit', () => app.quit())
 app.whenReady().then(() => {
   // 重新读取 config（等 app 就绪后 userData 路径才可用）
   config = loadConfig()
+
+  // 同步开机自启动状态（防止手动改过注册表后不一致）
+  applyAutoLaunch(config.autoLaunch ?? false)
 
   createWindow()
   createTray()
