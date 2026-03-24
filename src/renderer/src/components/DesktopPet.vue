@@ -4,14 +4,32 @@
     <!-- 对话气泡 -->
     <div class="bubble-wrap">
       <div class="speech-bubble" :class="mood">
-        <div class="bubble-text">{{ timeMessage }}</div>
-        <div class="bubble-subtext" v-if="subMessage">{{ subMessage }}</div>
+        <div class="bubble-text" :class="{ 'interact-flash': !!interactMessage }">
+          {{ interactMessage || timeMessage }}
+        </div>
+        <div class="bubble-subtext" v-if="!interactMessage && subMessage">{{ subMessage }}</div>
       </div>
     </div>
 
+    <!-- 点击飘出的爱心 -->
+    <div class="hearts-layer">
+      <span
+        v-for="h in floatingHearts"
+        :key="h.id"
+        class="floating-heart"
+        :style="{ left: h.x + 'px', animationDuration: h.dur + 's' }"
+      >{{ h.char }}</span>
+    </div>
+
     <!-- 小鱼 SVG -->
-    <div class="fish-wrap" :class="mood">
+    <div
+      class="fish-wrap"
+      :class="[mood, { 'is-hovered': isHovered }]"
+      @mouseenter="onFishHover"
+      @mouseleave="onFishLeave"
+    >
       <svg
+        ref="fishSvgRef"
         class="fish-svg"
         viewBox="0 0 120 80"
         xmlns="http://www.w3.org/2000/svg"
@@ -35,10 +53,10 @@
 
         <!-- 眼睛白色 -->
         <circle cx="84" cy="34" r="8" fill="white" />
-        <!-- 眼睛瞳孔 -->
-        <circle :cx="eyeX" cy="35" r="5" fill="#1a1a2e" />
+        <!-- 眼睛瞳孔（跟随鼠标） -->
+        <circle :cx="eyeX" :cy="eyeY" r="5" fill="#1a1a2e" />
         <!-- 眼睛高光 -->
-        <circle :cx="eyeX + 1" cy="33" r="2" fill="white" />
+        <circle :cx="eyeHighlightX" :cy="eyeHighlightY" r="2" fill="white" />
 
         <!-- 嘴巴 - 根据心情变化 -->
         <path v-if="mood === 'happy'" d="M 98 42 Q 106 48 98 50" stroke="#1a1a2e" stroke-width="2" fill="none" stroke-linecap="round"/>
@@ -93,10 +111,24 @@ const currentTime = ref(new Date())
 const showSettings = ref(false)
 const tempTime = ref('18:00')
 
+// 鼠标互动状态
+const fishSvgRef = ref<SVGElement | null>(null)
+const mousePos = ref({ x: 0, y: 0 })
+const isHovered = ref(false)
+const interactMessage = ref('')
+let interactTimer: ReturnType<typeof setTimeout> | null = null
+
+// 飘浮爱心
+interface Heart { id: number; x: number; char: string; dur: number }
+const floatingHearts = ref<Heart[]>([])
+let heartId = 0
+
 // 拖拽状态
 let isDragging = false
 let prevX = 0
 let prevY = 0
+let tapStartX = 0
+let tapStartY = 0
 
 // 计算剩余时间（分钟）
 const remainingMinutes = computed(() => {
@@ -149,10 +181,30 @@ const finColor = computed(() => {
   return colors[mood.value]
 })
 
-// 眼睛位置（心情影响）
-const eyeX = computed(() => {
-  return mood.value === 'sad' ? 83 : 85
+// 眼睛瞳孔跟随鼠标
+const eyeOffset = computed(() => {
+  const el = fishSvgRef.value
+  if (!el) return { x: 0, y: 0 }
+  const rect = el.getBoundingClientRect()
+  const scaleX = rect.width / 120
+  const scaleY = rect.height / 80
+  // 眼白中心在 SVG 坐标 (84, 34) 对应的屏幕坐标
+  const eyeCX = rect.left + 84 * scaleX
+  const eyeCY = rect.top + 34 * scaleY
+  const dx = mousePos.value.x - eyeCX
+  const dy = mousePos.value.y - eyeCY
+  const dist = Math.sqrt(dx * dx + dy * dy)
+  if (dist === 0) return { x: 0, y: 0 }
+  const maxOffset = 2.5
+  const factor = Math.min(dist / 100, 1) * maxOffset
+  return { x: (dx / dist) * factor, y: (dy / dist) * factor }
 })
+
+// 眼睛位置（心情 + 鼠标偏移）
+const eyeX = computed(() => (mood.value === 'sad' ? 83 : 85) + eyeOffset.value.x)
+const eyeY = computed(() => 35 + eyeOffset.value.y)
+const eyeHighlightX = computed(() => eyeX.value + 1)
+const eyeHighlightY = computed(() => eyeY.value - 2)
 
 // 主要消息
 const timeMessage = computed(() => {
@@ -204,25 +256,30 @@ onMounted(async () => {
   }, 10000) // 每10秒更新一次
 
   // 鼠标移动/抬起全局监听
-  document.addEventListener('mousemove', onDrag)
+  document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', stopDrag)
 })
 
 onUnmounted(() => {
   clearInterval(timer)
-  document.removeEventListener('mousemove', onDrag)
+  if (interactTimer) clearTimeout(interactTimer)
+  document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', stopDrag)
 })
 
-// 拖拽
+// 拖拽 & 点击检测
 function startDrag(e: MouseEvent): void {
   if (showSettings.value) return
   isDragging = true
   prevX = e.screenX
   prevY = e.screenY
+  tapStartX = e.screenX
+  tapStartY = e.screenY
 }
 
-function onDrag(e: MouseEvent): void {
+function onMouseMove(e: MouseEvent): void {
+  // 更新鼠标位置用于眼睛追踪
+  mousePos.value = { x: e.clientX, y: e.clientY }
   if (!isDragging) return
   const dx = e.screenX - prevX
   const dy = e.screenY - prevY
@@ -233,8 +290,56 @@ function onDrag(e: MouseEvent): void {
   }
 }
 
-function stopDrag(): void {
+function stopDrag(e: MouseEvent): void {
+  if (isDragging) {
+    const dx = Math.abs(e.screenX - tapStartX)
+    const dy = Math.abs(e.screenY - tapStartY)
+    // 移动 < 5px 视为点击
+    if (dx < 5 && dy < 5) {
+      onFishClick()
+    }
+  }
   isDragging = false
+}
+
+// 鼠标悬停
+function onFishHover(): void {
+  isHovered.value = true
+}
+function onFishLeave(): void {
+  isHovered.value = false
+}
+
+// 点击互动
+const tapMessages = [
+  '别戳我！', '嘿！', '干嘛呢~', '摸鱼中，勿扰',
+  '好痒啊！', '喂！', '再戳我就咬你！', '有事吗？',
+  '(=｀ω´=)', 'o(*￣▽￣*)o', '在摸了在摸了！', '嗷！'
+]
+const heartChars = ['❤️', '✨', '💕', '⭐', '💛', '💙']
+
+function onFishClick(): void {
+  // 随机消息
+  const msg = tapMessages[Math.floor(Math.random() * tapMessages.length)]
+  interactMessage.value = msg
+  if (interactTimer) clearTimeout(interactTimer)
+  interactTimer = setTimeout(() => { interactMessage.value = '' }, 2000)
+
+  // 飘出 2~3 个爱心/星星
+  const count = 2 + Math.floor(Math.random() * 2)
+  for (let i = 0; i < count; i++) {
+    const id = heartId++
+    const heart: Heart = {
+      id,
+      x: 170 + (Math.random() - 0.5) * 60, // 鱼的大概中心X偏移
+      char: heartChars[Math.floor(Math.random() * heartChars.length)],
+      dur: 0.8 + Math.random() * 0.6
+    }
+    floatingHearts.value.push(heart)
+    setTimeout(() => {
+      floatingHearts.value = floatingHearts.value.filter(h => h.id !== id)
+    }, heart.dur * 1000 + 100)
+  }
 }
 
 // 右键菜单
@@ -328,6 +433,39 @@ async function saveSettings(): Promise<void> {
   font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
 }
 
+/* 爱心层 */
+.hearts-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.floating-heart {
+  position: absolute;
+  bottom: 60px;
+  font-size: 18px;
+  animation: float-up linear forwards;
+  pointer-events: none;
+}
+
+@keyframes float-up {
+  0%   { opacity: 1; transform: translateY(0) scale(1); }
+  80%  { opacity: 0.8; transform: translateY(-50px) scale(1.2); }
+  100% { opacity: 0; transform: translateY(-70px) scale(0.8); }
+}
+
+/* 点击气泡文字闪动 */
+.interact-flash {
+  animation: text-pop 0.2s ease-out;
+}
+
+@keyframes text-pop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
 /* 鱼的区域 */
 .fish-wrap {
   position: absolute;
@@ -344,7 +482,7 @@ async function saveSettings(): Promise<void> {
   height: 90px;
   filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.2));
   animation: swim 3s ease-in-out infinite;
-  transition: filter 0.5s ease;
+  transition: filter 0.3s ease;
 }
 
 .fish-wrap.happy .fish-svg {
@@ -357,6 +495,18 @@ async function saveSettings(): Promise<void> {
 
 .fish-wrap.sad .fish-svg {
   animation: swim-sad 4s ease-in-out infinite;
+}
+
+/* 悬停：加速游动 + 发光 */
+.fish-wrap.is-hovered .fish-svg {
+  animation: swim-excited 0.6s ease-in-out infinite !important;
+  filter: drop-shadow(0 4px 14px rgba(255, 200, 80, 0.7));
+  cursor: pointer;
+}
+
+@keyframes swim-excited {
+  0%, 100% { transform: translateY(0) rotate(-6deg) scale(1.05); }
+  50%       { transform: translateY(-10px) rotate(6deg) scale(1.1); }
 }
 
 /* 鱼尾动画 */
