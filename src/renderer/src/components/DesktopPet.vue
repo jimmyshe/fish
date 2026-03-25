@@ -149,6 +149,10 @@ const currentTime = ref(new Date())
 const showSettings = ref(false)
 const tempTime = ref('18:00')
 
+const MS_PER_SECOND = 1000
+const MS_PER_MINUTE = 60 * MS_PER_SECOND
+const MS_PER_HOUR = 60 * MS_PER_MINUTE
+
 // ── 鼠标追踪 ──────────────────────────────────────
 const fishSvgRef = ref<SVGElement | null>(null)
 const mousePos = ref({ x: 0, y: 0 })
@@ -187,7 +191,7 @@ function spawnParticles(chars: string[], count: number, type = 'heart') {
     particles.value.push(p)
     setTimeout(() => {
       particles.value = particles.value.filter(x => x.id !== id)
-    }, p.dur * 1000 + 150)
+    }, p.dur * MS_PER_SECOND + 150)
   }
 }
 
@@ -214,7 +218,7 @@ function triggerScared() {
 const isSleeping = ref(false)
 let sleepTimer: ReturnType<typeof setTimeout> | null = null
 let zzzInterval: ReturnType<typeof setInterval> | null = null
-const SLEEP_TIMEOUT = 3 * 60 * 1000 // 3分钟无操作
+const SLEEP_TIMEOUT = 3 * MS_PER_MINUTE // 3分钟无操作
 
 function resetSleepTimer() {
   if (isSleeping.value) {
@@ -272,7 +276,7 @@ function triggerRainbow() {
 // ── 喝水提醒 ──────────────────────────────────────
 const showWaterReminder = ref(false)
 let waterReminderTimer: ReturnType<typeof setTimeout> | null = null
-const WATER_INTERVAL = 45 * 60 * 1000 // 45分钟
+const WATER_INTERVAL = 45 * MS_PER_MINUTE // 45分钟
 
 function scheduleWaterReminder() {
   if (waterReminderTimer) clearTimeout(waterReminderTimer)
@@ -308,7 +312,7 @@ const monologues = [
 ]
 
 function scheduleMonologue() {
-  const delay = (90 + Math.random() * 120) * 1000 // 1.5~3.5 分钟
+  const delay = (90 + Math.random() * 120) * MS_PER_SECOND // 1.5~3.5 分钟
   setTimeout(() => {
     if (!isSleeping.value && !interactMessage.value && !isScared.value) {
       showMsg(monologues[Math.floor(Math.random() * monologues.length)], 3000)
@@ -319,7 +323,7 @@ function scheduleMonologue() {
 
 // ── 自主漂移 ──────────────────────────────────────
 function scheduleDrift() {
-  const delay = (35 + Math.random() * 35) * 1000 // 35~70秒
+  const delay = (35 + Math.random() * 35) * MS_PER_SECOND // 35~70秒
   setTimeout(() => {
     if (!isDragging && !isSleeping.value && window.api) {
       const dx = Math.round((Math.random() - 0.5) * 160)
@@ -346,9 +350,9 @@ function animateDrift(totalDx: number, totalDy: number) {
 const remainingMinutes = computed(() => {
   const now = currentTime.value
   const [endHour, endMin] = workEndTime.value.split(':').map(Number)
-  const endMs = endHour * 3600000 + endMin * 60000
-  const nowMs = now.getHours() * 3600000 + now.getMinutes() * 60000 + now.getSeconds() * 1000
-  return Math.floor((endMs - nowMs) / 60000)
+  const endMs = endHour * MS_PER_HOUR + endMin * MS_PER_MINUTE
+  const nowMs = now.getHours() * MS_PER_HOUR + now.getMinutes() * MS_PER_MINUTE + now.getSeconds() * MS_PER_SECOND
+  return Math.floor((endMs - nowMs) / MS_PER_MINUTE)
 })
 
 const mood = computed(() => {
@@ -452,7 +456,7 @@ onMounted(async () => {
     })
   }
 
-  clockTimer = setInterval(() => { currentTime.value = new Date() }, 10000)
+  clockTimer = setInterval(() => { currentTime.value = new Date() }, 10 * MS_PER_SECOND)
 
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', stopDrag)
