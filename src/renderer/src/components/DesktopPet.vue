@@ -142,6 +142,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { useDrag } from '../composables/useDrag'
 
 // ── 基础状态 ──────────────────────────────────────
 const workEndTime = ref('18:00')
@@ -196,9 +197,7 @@ function spawnParticles(chars: string[], count: number, type = 'heart') {
 }
 
 // ── 拖拽状态 ──────────────────────────────────────
-let isDragging = false
-let prevX = 0, prevY = 0
-let tapStartX = 0, tapStartY = 0
+const { isDragging, prevX, prevY, tapStartX, tapStartY } = useDrag()
 
 // ── 受惊模式 ──────────────────────────────────────
 const isScared = ref(false)
@@ -325,7 +324,7 @@ function scheduleMonologue() {
 function scheduleDrift() {
   const delay = (35 + Math.random() * 35) * MS_PER_SECOND // 35~70秒
   setTimeout(() => {
-    if (!isDragging && !isSleeping.value && window.api) {
+    if (!isDragging.value && !isSleeping.value && window.api) {
       const dx = Math.round((Math.random() - 0.5) * 160)
       const dy = Math.round((Math.random() - 0.5) * 80)
       animateDrift(dx, dy)
@@ -479,9 +478,9 @@ onUnmounted(() => {
 // ── 事件处理 ──────────────────────────────────────
 function startDrag(e: MouseEvent) {
   if (showSettings.value) return
-  isDragging = true
-  prevX = e.screenX; prevY = e.screenY
-  tapStartX = e.screenX; tapStartY = e.screenY
+  isDragging.value = true
+  prevX.value = e.screenX; prevY.value = e.screenY
+  tapStartX.value = e.screenX; tapStartY.value = e.screenY
 }
 
 function onMouseMove(e: MouseEvent) {
@@ -502,22 +501,22 @@ function onMouseMove(e: MouseEvent) {
   lastMouseTime = now
   lastMouseClientPos = { x: e.clientX, y: e.clientY }
 
-  if (!isDragging) return
-  const dx = e.screenX - prevX
-  const dy = e.screenY - prevY
-  prevX = e.screenX; prevY = e.screenY
+  if (!isDragging.value) return
+  const dx = e.screenX - prevX.value
+  const dy = e.screenY - prevY.value
+  prevX.value = e.screenX; prevY.value = e.screenY
   if (window.api && (dx !== 0 || dy !== 0)) {
     window.api.moveWindow(dx, dy)
   }
 }
 
 function stopDrag(e: MouseEvent) {
-  if (isDragging) {
-    if (Math.abs(e.screenX - tapStartX) < 5 && Math.abs(e.screenY - tapStartY) < 5) {
+  if (isDragging.value) {
+    if (Math.abs(e.screenX - tapStartX.value) < 5 && Math.abs(e.screenY - tapStartY.value) < 5) {
       onFishClick()
     }
   }
-  isDragging = false
+  isDragging.value = false
 }
 
 function onFishHover() { isHovered.value = true }
