@@ -7,7 +7,7 @@
     "name": "jimmyshe",
     "email": "jimmys@ddoo.tech"
   },
-  "license": "ISC",
+  "license": "GPL-3.0-or-later",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/jimmyshe/fish.git"

@@ -115,4 +115,6 @@ npm run dist
 
 ## 📄 开源协议
 
-[ISC License](LICENSE)
+[GNU General Public License v3.0 or later](LICENSE)（GPL-3.0-or-later）
+
+Copyright (C) 2026 jimmyshe
