@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, screen, Menu, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, screen, Tray, nativeImage } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
+import { createMenuModule } from './menu'
 
 interface Config {
   workEndTime: string
@@ -38,6 +39,14 @@ function saveConfig(config: Config): void {
 let config = loadConfig()
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+
+// 菜单模块：tray / 右键菜单 / 自启动序列的唯一属主
+const menu = createMenuModule({
+  getTray: () => tray,
+  getWindow: () => mainWindow,
+  getConfig: () => config,
+  saveConfig
+})
 
 function getInitialPosition(): { x: number; y: number } {
   if (config.windowX >= 0 && config.windowY >= 0) {
@@ -88,63 +97,12 @@ function createWindow(): void {
   })
 }
 
-function applyAutoLaunch(enabled: boolean): void {
-  // 开发模式下路径不对，仅生产包生效
-  if (is.dev) return
-  app.setLoginItemSettings({
-    openAtLogin: enabled,
-    name: '摸鱼宠物'
-  })
-}
-
 function createTray(): void {
   // 1x1 透明图标占位，实际用 emoji 作为 tooltip
   const icon = nativeImage.createEmpty()
   tray = new Tray(icon)
   tray.setToolTip('摸鱼宠物 🐟')
-  updateTrayMenu()
-}
-
-function updateTrayMenu(): void {
-  if (!tray) return
-  const contextMenu = Menu.buildFromTemplate([
-    {
-      label: `🕐 下班时间: ${config.workEndTime}`,
-      enabled: false
-    },
-    { type: 'separator' },
-    {
-      label: '⏰ 设置下班时间',
-      click: () => mainWindow?.webContents.send('open-settings')
-    },
-    {
-      label: '👁 显示/隐藏',
-      click: () => {
-        if (mainWindow?.isVisible()) {
-          mainWindow.hide()
-        } else {
-          mainWindow?.show()
-        }
-      }
-    },
-    {
-      label: '🚀 开机自启动',
-      type: 'checkbox',
-      checked: config.autoLaunch ?? false,
-      click: (item) => {
-        config.autoLaunch = item.checked
-        saveConfig(config)
-        applyAutoLaunch(item.checked)
-        updateTrayMenu()
-      }
-    },
-    { type: 'separator' },
-    {
-      label: '❌ 退出',
-      click: () => app.quit()
-    }
-  ])
-  tray.setContextMenu(contextMenu)
+  menu.updateTrayMenu()
 }
 
 // IPC handlers
@@ -161,51 +119,12 @@ ipcMain.handle('get-work-end-time', () => {
 ipcMain.handle('set-work-end-time', (_event, time: string) => {
   config.workEndTime = time
   saveConfig(config)
-  updateTrayMenu()
+  menu.updateTrayMenu()
   return true
 })
 
 ipcMain.on('show-context-menu', () => {
-  if (!mainWindow) return
-  const menu = Menu.buildFromTemplate([
-    {
-      label: `🕐 下班时间: ${config.workEndTime}`,
-      enabled: false
-    },
-    { type: 'separator' },
-    {
-      label: '⏰ 设置下班时间',
-      click: () => mainWindow?.webContents.send('open-settings')
-    },
-    {
-      label: '📌 置顶',
-      type: 'checkbox',
-      checked: mainWindow?.isAlwaysOnTop() ?? true,
-      click: (item) => {
-        mainWindow?.setAlwaysOnTop(item.checked)
-        if (item.checked && process.platform !== 'darwin') {
-          mainWindow?.setAlwaysOnTop(true, 'screen-saver')
-        }
-      }
-    },
-    {
-      label: '🚀 开机自启动',
-      type: 'checkbox',
-      checked: config.autoLaunch ?? false,
-      click: (item) => {
-        config.autoLaunch = item.checked
-        saveConfig(config)
-        applyAutoLaunch(item.checked)
-        updateTrayMenu()
-      }
-    },
-    { type: 'separator' },
-    {
-      label: '❌ 退出',
-      click: () => app.quit()
-    }
-  ])
-  menu.popup({ window: mainWindow! })
+  menu.popupContextMenu()
 })
 
 ipcMain.on('quit', () => app.quit())
@@ -215,7 +134,7 @@ app.whenReady().then(() => {
   config = loadConfig()
 
   // 同步开机自启动状态（防止手动改过注册表后不一致）
-  applyAutoLaunch(config.autoLaunch ?? false)
+  menu.setAutoLaunch(config.autoLaunch ?? false)
 
   createWindow()
   createTray()
