@@ -37,3 +37,17 @@ src/
 ## Stack
 
 Electron 31 + Vue 3 + TypeScript + electron-vite + electron-builder + @electron-toolkit
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues (github.com/jimmyshe/fish) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five canonical triage labels, unchanged. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
