@@ -141,7 +141,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useDrag } from '../composables/useDrag'
 import { usePetScheduler } from '../composables/usePetScheduler'
 
@@ -199,8 +199,12 @@ function spawnParticles(chars: string[], count: number, type = 'heart') {
   }
 }
 
-// ── 拖拽状态 ──────────────────────────────────────
-const { isDragging, prevX, prevY, tapStartX, tapStartY } = useDrag()
+// ── 拖拽模块 ──────────────────────────────────────
+// 位移计算、点击判定、moveWindow IPC 都在模块内部；监听自挂自拆
+const { isDragging, startDrag } = useDrag({
+  onTap: onFishClick,
+  onMouseMove: handleMouseMove,
+})
 
 // ── 受惊模式 ──────────────────────────────────────
 const isScared = ref(false)
@@ -448,30 +452,15 @@ onMounted(async () => {
 
   scheduler.every('clock', 10 * MS_PER_SECOND, () => { currentTime.value = new Date() })
 
-  document.addEventListener('mousemove', onMouseMove)
-  document.addEventListener('mouseup', stopDrag)
-
   resetSleepTimer()
   scheduleMonologue()
   scheduleDrift()
   scheduleWaterReminder()
 })
 
-onUnmounted(() => {
-  // 定时器由 usePetScheduler 在卸载时统一取消
-  document.removeEventListener('mousemove', onMouseMove)
-  document.removeEventListener('mouseup', stopDrag)
-})
-
 // ── 事件处理 ──────────────────────────────────────
-function startDrag(e: MouseEvent) {
-  if (showSettings.value) return
-  isDragging.value = true
-  prevX.value = e.screenX; prevY.value = e.screenY
-  tapStartX.value = e.screenX; tapStartY.value = e.screenY
-}
-
-function onMouseMove(e: MouseEvent) {
+// startDrag / stopDrag / 拖拽位移已由 useDrag 模块接管
+function handleMouseMove(e: MouseEvent) {
   mousePos.value = { x: e.clientX, y: e.clientY }
   resetSleepTimer()
 
@@ -488,23 +477,6 @@ function onMouseMove(e: MouseEvent) {
   }
   lastMouseTime = now
   lastMouseClientPos = { x: e.clientX, y: e.clientY }
-
-  if (!isDragging.value) return
-  const dx = e.screenX - prevX.value
-  const dy = e.screenY - prevY.value
-  prevX.value = e.screenX; prevY.value = e.screenY
-  if (window.api && (dx !== 0 || dy !== 0)) {
-    window.api.moveWindow(dx, dy)
-  }
-}
-
-function stopDrag(e: MouseEvent) {
-  if (isDragging.value) {
-    if (Math.abs(e.screenX - tapStartX.value) < 5 && Math.abs(e.screenY - tapStartY.value) < 5) {
-      onFishClick()
-    }
-  }
-  isDragging.value = false
 }
 
 function onFishHover() { isHovered.value = true }
