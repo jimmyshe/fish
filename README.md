@@ -1,4 +1,4 @@
-# Fish Pet 🐟 `v1.3.0`
+# Fish Pet 🐟 `v1.4.0`
 
 一个基于 Electron + Vite + Vue 3 制作的趣味桌面摸鱼宠物。它会陪伴你度过忙碌的工作时光，实时显示下班倒计时，并在下班时刻准时提醒你"快跑"！
 
@@ -8,7 +8,9 @@
 
 ### 🕒 核心功能
 - **下班倒计时**：实时显示距离下班的时间，精准到分钟。
-- **持久化配置**：自定义下班时间，重启应用后自动恢复设置。
+- **持久化配置**：自定义下班时间，重启应用后自动恢复设置（含窗口位置记忆）。
+- **喝水提醒**：每 45 分钟温馨提醒喝水，点击确认后重新计时。💧
+- **开机自启动**：可选随系统登录自动启动。
 - **系统托盘**：支持最小化到托盘，右键菜单快速设置与退出。
 
 ### 🐟 智能心情系统
@@ -33,6 +35,7 @@
 - **框架**: [Electron 31](https://www.electronjs.org/) + [Vue 3](https://vuejs.org/)
 - **构建工具**: [electron-vite](https://electron-vite.org/)
 - **语言**: TypeScript
+- **测试**: Vitest（fake timers，29 个单元测试）
 - **打包**: electron-builder
 
 ---
@@ -41,13 +44,23 @@
 
 ```text
 src/
-├── main/          # Electron 主进程 (窗口管理、托盘图标、IPC 通信)
+├── main/          # Electron 主进程
+│   ├── index.ts   # 窗口、托盘接线、IPC 注册
+│   ├── config.ts  # configStore：配置唯一属主（去抖持久化）
+│   └── menu.ts    # 菜单模块：tray / 右键菜单 / 自启动序列
 ├── preload/       # 预加载脚本 (安全的 API 桥接)
+├── shared/        # 跨进程共享类型 (Config / window.api 契约)
 └── renderer/      # Vue 渲染进程
     └── src/
         ├── App.vue
-        └── components/
-            └── DesktopPet.vue  # 宠物核心逻辑与动画
+        ├── components/
+        │   └── DesktopPet.vue   # 宠物状态组合与模板
+        ├── composables/
+        │   ├── PetScheduler.ts  # 定时器调度模块（after/every/cancel）
+        │   ├── usePetScheduler.ts
+        │   └── useDrag.ts       # 拖拽模块（位移、点击判定、IPC）
+        └── lib/
+            └── petTime.ts       # 时间推导模块（心情阈值与文案）
 ```
 
 ---
@@ -64,9 +77,14 @@ npm install
 npm run dev
 ```
 
-### 3. 构建与打包
+### 3. 运行测试
 ```bash
-# 构建并打包成安装包 (Windows .exe / macOS .dmg)
+npm test
+```
+
+### 4. 构建与打包
+```bash
+# 构建并打包成安装包 (Windows .exe / Linux)
 npm run dist
 ```
 
@@ -77,6 +95,23 @@ npm run dist
 1. **移动**：左键长按小鱼可拖拽至屏幕任意位置。
 2. **设置**：右键点击小鱼或托盘图标，选择“设置下班时间”。
 3. **互动**：尝试点击、快速晃动鼠标或静置屏幕，探索更多动画细节。
+
+## 📋 更新日志
+
+### v1.4.0
+- **架构重构**（行为零变化）：
+  - 全部定时行为收归 `PetScheduler` 模块，修复组件卸载后定时器继续触发的隐患
+  - 拖拽逻辑收归 `useDrag` 模块；菜单构建收归 `menu` 模块；时间/心情推导收归 `petTime` 模块
+  - 配置收归 `configStore` 唯一属主：写盘去抖、退出时兜底落盘、坏配置自动回退默认值
+  - `Config` 与 `window.api` 类型统一至 `src/shared/`，三进程共享单一契约
+- **测试基建**：引入 Vitest（29 个单元测试），push / PR 时由 GitHub Actions 自动运行
+
+### v1.3.0
+- 新增喝水提醒系统与交互视觉
+- 支持开机自启动
+- 睡眠 / 受惊模式、连击系统与粒子特效
+
+---
 
 ## 📄 开源协议
 
