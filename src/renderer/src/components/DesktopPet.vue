@@ -467,8 +467,13 @@ function onRightClick() {
 
 async function saveSettings() {
   if (!tempTime.value) return
-  workEndTime.value = tempTime.value
-  if (window.api) await window.api.setWorkEndTime(tempTime.value)
+  if (window.api) {
+    // 以主进程返回的已保存配置为准，避免本地先写、异步失败导致分叉
+    const config = await window.api.setWorkEndTime(tempTime.value)
+    workEndTime.value = config.workEndTime
+  } else {
+    workEndTime.value = tempTime.value
+  }
   showSettings.value = false
 }
 </script>

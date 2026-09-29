@@ -19,7 +19,7 @@ src/
 ## Key Conventions
 
 - **Language**: Chinese (README, code comments, UI strings)
-- **Config persistence**: JSON stored in `app.getPath('userData')/config.json`
+- **Config persistence**: JSON stored in `app.getPath('userData')/config.json`; owned by the configStore module (`src/main/config.ts`, debounced writes, flushed on will-quit). The `Config` type and the `window.api` contract live in `src/shared/` as the single source for all three processes
 - **IPC**: Renderer uses `window.api` (exposed via preload); main process uses `ipcMain.handle/on`
 - **Auto-launch**: Only applies in production builds; silently skipped in dev mode (`is.dev`)
 - **Window**: Frameless, transparent, always-on-top, non-resizable desktop widget

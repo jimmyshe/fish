@@ -1,14 +1,15 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { Api } from '../shared/api'
 
-const api = {
+const api: Api = {
   moveWindow: (deltaX: number, deltaY: number): void => {
     ipcRenderer.send('move-window', deltaX, deltaY)
   },
   getWorkEndTime: (): Promise<string> => {
     return ipcRenderer.invoke('get-work-end-time')
   },
-  setWorkEndTime: (time: string): Promise<boolean> => {
+  setWorkEndTime: (time: string) => {
     return ipcRenderer.invoke('set-work-end-time', time)
   },
   showContextMenu: (): void => {

@@ -28,7 +28,7 @@ type Template = Array<Record<string, unknown>>
 
 function makeDeps(configOverrides: Partial<MenuConfig> = {}) {
   const config: MenuConfig = { workEndTime: '18:00', autoLaunch: false, ...configOverrides }
-  const saveConfig = vi.fn()
+  const setConfig = vi.fn()
   const tray = { setContextMenu: mocks.setContextMenu }
   const win = {
     webContents: { send: mocks.send },
@@ -39,12 +39,12 @@ function makeDeps(configOverrides: Partial<MenuConfig> = {}) {
     setAlwaysOnTop: vi.fn()
   }
   const deps = {
-    getTray: () => tray,
+    getTray: () => tray as never,
     getWindow: () => win as never,
     getConfig: () => config,
-    saveConfig
+    setConfig
   }
-  return { deps, config, saveConfig, tray, win }
+  return { deps, config, setConfig, tray, win }
 }
 
 function lastTemplate(): Template {
@@ -82,15 +82,14 @@ describe('menu module', () => {
   })
 
   it('setAutoLaunch：更新 → 保存 → 应用 → 刷新，顺序固定', () => {
-    const { deps, config, saveConfig } = makeDeps()
+    const { deps, setConfig } = makeDeps()
     const menu = createMenuModule(deps)
     menu.setAutoLaunch(true)
 
-    expect(config.autoLaunch).toBe(true)
-    expect(saveConfig).toHaveBeenCalledWith(config)
+    expect(setConfig).toHaveBeenCalledWith({ autoLaunch: true })
     expect(mocks.setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true, name: '摸鱼宠物' })
     expect(mocks.setContextMenu).toHaveBeenCalledTimes(1) // 菜单刷新
-    expect(saveConfig.mock.invocationCallOrder[0])
+    expect(setConfig.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.setLoginItemSettings.mock.invocationCallOrder[0])
     expect(mocks.setLoginItemSettings.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.setContextMenu.mock.invocationCallOrder[0])
@@ -98,24 +97,24 @@ describe('menu module', () => {
 
   it('开发模式：跳过系统自启动设置，但保存与菜单刷新照做', () => {
     mocks.electronKit.is.dev = true
-    const { deps, saveConfig } = makeDeps()
+    const { deps, setConfig } = makeDeps()
     const menu = createMenuModule(deps)
     menu.setAutoLaunch(true)
 
     expect(mocks.setLoginItemSettings).not.toHaveBeenCalled()
-    expect(saveConfig).toHaveBeenCalledTimes(1)
+    expect(setConfig).toHaveBeenCalledTimes(1)
     expect(mocks.setContextMenu).toHaveBeenCalledTimes(1)
   })
 
   it('菜单里的自启动勾选走同一条 setAutoLaunch 序列', () => {
-    const { deps, saveConfig } = makeDeps()
+    const { deps, setConfig } = makeDeps()
     const menu = createMenuModule(deps)
     menu.updateTrayMenu()
 
     const item = lastTemplate().find(i => i.label === '🚀 开机自启动')!
     ;(item.click as (i: { checked: boolean }) => void)({ checked: true })
 
-    expect(saveConfig).toHaveBeenCalledTimes(1)
+    expect(setConfig).toHaveBeenCalledTimes(1)
     expect(mocks.setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true, name: '摸鱼宠物' })
   })
 

@@ -1,42 +1,10 @@
 import { app, BrowserWindow, ipcMain, screen, Tray, nativeImage } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs'
 import { createMenuModule } from './menu'
+import { createConfigStore, type ConfigStore } from './config'
 
-interface Config {
-  workEndTime: string
-  windowX: number
-  windowY: number
-  autoLaunch: boolean
-}
-
-// 简易持久化存储
-function getConfigPath(): string {
-  const userDataPath = app.getPath('userData')
-  if (!existsSync(userDataPath)) {
-    mkdirSync(userDataPath, { recursive: true })
-  }
-  return join(userDataPath, 'config.json')
-}
-
-function loadConfig(): Config {
-  const path = getConfigPath()
-  if (!existsSync(path)) {
-    return { workEndTime: '18:00', windowX: -1, windowY: -1, autoLaunch: false }
-  }
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8')) as Config
-  } catch {
-    return { workEndTime: '18:00', windowX: -1, windowY: -1, autoLaunch: false }
-  }
-}
-
-function saveConfig(config: Config): void {
-  writeFileSync(getConfigPath(), JSON.stringify(config, null, 2), 'utf-8')
-}
-
-let config = loadConfig()
+let configStore: ConfigStore
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
@@ -44,13 +12,14 @@ let tray: Tray | null = null
 const menu = createMenuModule({
   getTray: () => tray,
   getWindow: () => mainWindow,
-  getConfig: () => config,
-  saveConfig
+  getConfig: () => configStore.get(),
+  setConfig: (patch) => { configStore.set(patch) }
 })
 
 function getInitialPosition(): { x: number; y: number } {
-  if (config.windowX >= 0 && config.windowY >= 0) {
-    return { x: config.windowX, y: config.windowY }
+  const { windowX, windowY } = configStore.get()
+  if (windowX >= 0 && windowY >= 0) {
+    return { x: windowX, y: windowY }
   }
   const display = screen.getPrimaryDisplay()
   const { width, height } = display.workAreaSize
@@ -91,9 +60,7 @@ function createWindow(): void {
   mainWindow.on('moved', () => {
     if (!mainWindow) return
     const [wx, wy] = mainWindow.getPosition()
-    config.windowX = wx
-    config.windowY = wy
-    saveConfig(config)
+    configStore.set({ windowX: wx, windowY: wy })
   })
 }
 
@@ -113,14 +80,13 @@ ipcMain.on('move-window', (_event, deltaX: number, deltaY: number) => {
 })
 
 ipcMain.handle('get-work-end-time', () => {
-  return config.workEndTime
+  return configStore.get().workEndTime
 })
 
 ipcMain.handle('set-work-end-time', (_event, time: string) => {
-  config.workEndTime = time
-  saveConfig(config)
+  const updated = configStore.set({ workEndTime: time })
   menu.updateTrayMenu()
-  return true
+  return updated
 })
 
 ipcMain.on('show-context-menu', () => {
@@ -130,11 +96,12 @@ ipcMain.on('show-context-menu', () => {
 ipcMain.on('quit', () => app.quit())
 
 app.whenReady().then(() => {
-  // 重新读取 config（等 app 就绪后 userData 路径才可用）
-  config = loadConfig()
+  // 配置模块在 app 就绪后创建（userData 路径此时才可用）
+  configStore = createConfigStore({ configPath: join(app.getPath('userData'), 'config.json') })
+  app.on('will-quit', () => configStore.flush())
 
   // 同步开机自启动状态（防止手动改过注册表后不一致）
-  menu.setAutoLaunch(config.autoLaunch ?? false)
+  menu.setAutoLaunch(configStore.get().autoLaunch)
 
   createWindow()
   createTray()

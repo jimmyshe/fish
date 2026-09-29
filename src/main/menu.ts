@@ -12,7 +12,7 @@ export interface MenuDeps {
   getTray: () => Tray | null
   getWindow: () => BrowserWindow | null
   getConfig: () => MenuConfig
-  saveConfig: (config: MenuConfig) => void
+  setConfig: (patch: Partial<MenuConfig>) => void
 }
 
 /**
@@ -78,7 +78,7 @@ export function createMenuModule(deps: MenuDeps) {
       {
         label: '🚀 开机自启动',
         type: 'checkbox',
-        checked: deps.getConfig().autoLaunch ?? false,
+        checked: deps.getConfig().autoLaunch,
         click: (item: MenuItem) => setAutoLaunch(item.checked)
       },
       { type: 'separator' },
@@ -103,9 +103,7 @@ export function createMenuModule(deps: MenuDeps) {
   }
 
   function setAutoLaunch(enabled: boolean): void {
-    const config = deps.getConfig()
-    config.autoLaunch = enabled
-    deps.saveConfig(config)
+    deps.setConfig({ autoLaunch: enabled })
     applyAutoLaunch(enabled)
     updateTrayMenu()
   }

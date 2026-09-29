@@ -1,12 +1,11 @@
 /// <reference types="vite/client" />
 
-interface Window {
-  api: {
-    moveWindow: (deltaX: number, deltaY: number) => void
-    getWorkEndTime: () => Promise<string>
-    setWorkEndTime: (time: string) => Promise<boolean>
-    showContextMenu: () => void
-    quit: () => void
-    onOpenSettings: (callback: () => void) => () => void
+import type { Api } from '../../shared/api'
+
+declare global {
+  interface Window {
+    api: Api
   }
 }
+
+export {}
