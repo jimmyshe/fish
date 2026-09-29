@@ -5,6 +5,7 @@
 - `npm run dev` — Start development server (electron-vite dev)
 - `npm run build` — Build for production (electron-vite build)
 - `npm run dist` — Build and package into installable (electron-vite build && electron-builder)
+- `npm test` — Run unit tests (vitest, fake timers)
 
 ## Project Structure
 
@@ -29,10 +30,14 @@ src/
 - Builds on Windows and Ubuntu; publishes to GitHub Releases automatically
 - Node.js version: 22
 
+## Testing
+
+- Unit tests via vitest (`npm test`), colocated as `*.test.ts`; CI runs them on push to master and PRs (.github/workflows/test.yml)
+- All timer-driven behavior is owned by the PetScheduler module (src/renderer/src/composables/); new scheduled behavior registers a named timer there instead of raw setTimeout/setInterval
+
 ## Missing
 
-- No lint, typecheck, or test scripts defined
-- No unit/integration tests
+- No lint or typecheck scripts defined
 
 ## Stack
 

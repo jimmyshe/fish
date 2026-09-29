@@ -143,6 +143,11 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDrag } from '../composables/useDrag'
+import { usePetScheduler } from '../composables/usePetScheduler'
+
+// ── 定时器调度 ────────────────────────────────────
+// 全部定时行为的唯一属主；句柄不离开模块，卸载时自动全部取消
+const scheduler = usePetScheduler()
 
 // ── 基础状态 ──────────────────────────────────────
 const workEndTime = ref('18:00')
@@ -164,12 +169,10 @@ let lastMouseClientPos = { x: 0, y: 0 }
 
 // ── 互动消息 ──────────────────────────────────────
 const interactMessage = ref('')
-let interactTimer: ReturnType<typeof setTimeout> | null = null
 
 function showMsg(msg: string, duration = 2000) {
   interactMessage.value = msg
-  if (interactTimer) clearTimeout(interactTimer)
-  interactTimer = setTimeout(() => { interactMessage.value = '' }, duration)
+  scheduler.after('interact', duration, () => { interactMessage.value = '' })
 }
 
 // ── 飘浮粒子 ──────────────────────────────────────
@@ -190,9 +193,9 @@ function spawnParticles(chars: string[], count: number, type = 'heart') {
       type,
     }
     particles.value.push(p)
-    setTimeout(() => {
+    scheduler.after(`particle:${id}`, p.dur * MS_PER_SECOND + 150, () => {
       particles.value = particles.value.filter(x => x.id !== id)
-    }, p.dur * MS_PER_SECOND + 150)
+    })
   }
 }
 
@@ -201,7 +204,6 @@ const { isDragging, prevX, prevY, tapStartX, tapStartY } = useDrag()
 
 // ── 受惊模式 ──────────────────────────────────────
 const isScared = ref(false)
-let scaredTimer: ReturnType<typeof setTimeout> | null = null
 
 function triggerScared() {
   if (isScared.value) return
@@ -209,14 +211,11 @@ function triggerScared() {
   const msgs = ['呀！！', '不要过来！', '救命！', '太快了！', '(ﾟДﾟ)！']
   showMsg(msgs[Math.floor(Math.random() * msgs.length)], 1500)
   spawnParticles(['！', '💦', '😱'], 3, 'scare')
-  if (scaredTimer) clearTimeout(scaredTimer)
-  scaredTimer = setTimeout(() => { isScared.value = false }, 1800)
+  scheduler.after('scared', 1800, () => { isScared.value = false })
 }
 
 // ── 睡眠模式 ──────────────────────────────────────
 const isSleeping = ref(false)
-let sleepTimer: ReturnType<typeof setTimeout> | null = null
-let zzzInterval: ReturnType<typeof setInterval> | null = null
 const SLEEP_TIMEOUT = 3 * MS_PER_MINUTE // 3分钟无操作
 
 function resetSleepTimer() {
@@ -224,23 +223,22 @@ function resetSleepTimer() {
     wakeUp()
     return
   }
-  if (sleepTimer) clearTimeout(sleepTimer)
-  sleepTimer = setTimeout(() => { fallAsleep() }, SLEEP_TIMEOUT)
+  scheduler.after('sleep', SLEEP_TIMEOUT, fallAsleep)
 }
 
 function fallAsleep() {
   isSleeping.value = true
   // 定时飘出 Zzz
-  zzzInterval = setInterval(() => {
+  scheduler.every('zzz', 1500, () => {
     if (isSleeping.value) {
       spawnParticles(['z', 'Z', 'z'], 1, 'zzz')
     }
-  }, 1500)
+  })
 }
 
 function wakeUp() {
   isSleeping.value = false
-  if (zzzInterval) { clearInterval(zzzInterval); zzzInterval = null }
+  scheduler.cancel('zzz')
   showMsg('呼～被吵醒了...', 2000)
   resetSleepTimer()
 }
@@ -248,13 +246,10 @@ function wakeUp() {
 // ── 连击彩蛋 ──────────────────────────────────────
 const comboCount = ref(0)
 const isRainbow = ref(false)
-let comboResetTimer: ReturnType<typeof setTimeout> | null = null
-let rainbowTimer: ReturnType<typeof setTimeout> | null = null
 
 function addCombo() {
   comboCount.value++
-  if (comboResetTimer) clearTimeout(comboResetTimer)
-  comboResetTimer = setTimeout(() => { comboCount.value = 0 }, 3000)
+  scheduler.after('combo', 3000, () => { comboCount.value = 0 })
 
   if (comboCount.value >= 5) {
     comboCount.value = 0
@@ -268,21 +263,18 @@ function triggerRainbow() {
   const msgs = ['🌈 彩虹鱼出现了！！', '✨ 传说中的彩鱼！', '🎊 隐藏彩蛋解锁！']
   showMsg(msgs[Math.floor(Math.random() * msgs.length)], 4000)
   spawnParticles(['🌈', '✨', '🎉', '⭐', '💫'], 6, 'rainbow')
-  if (rainbowTimer) clearTimeout(rainbowTimer)
-  rainbowTimer = setTimeout(() => { isRainbow.value = false }, 5000)
+  scheduler.after('rainbow', 5000, () => { isRainbow.value = false })
 }
 
 // ── 喝水提醒 ──────────────────────────────────────
 const showWaterReminder = ref(false)
-let waterReminderTimer: ReturnType<typeof setTimeout> | null = null
 const WATER_INTERVAL = 45 * MS_PER_MINUTE // 45分钟
 
 function scheduleWaterReminder() {
-  if (waterReminderTimer) clearTimeout(waterReminderTimer)
-  waterReminderTimer = setTimeout(() => {
+  scheduler.after('water', WATER_INTERVAL, () => {
     showWaterReminder.value = true
     spawnParticles(['💧', '💦', '💧'], 4, 'heart')
-  }, WATER_INTERVAL)
+  })
 }
 
 function confirmWaterDrank() {
@@ -312,25 +304,26 @@ const monologues = [
 
 function scheduleMonologue() {
   const delay = (90 + Math.random() * 120) * MS_PER_SECOND // 1.5~3.5 分钟
-  setTimeout(() => {
+  // 同名重挂：回调内再挂同名定时器，cancel('monologue') 可终止整条链
+  scheduler.after('monologue', delay, () => {
     if (!isSleeping.value && !interactMessage.value && !isScared.value) {
       showMsg(monologues[Math.floor(Math.random() * monologues.length)], 3000)
     }
     scheduleMonologue()
-  }, delay)
+  })
 }
 
 // ── 自主漂移 ──────────────────────────────────────
 function scheduleDrift() {
   const delay = (35 + Math.random() * 35) * MS_PER_SECOND // 35~70秒
-  setTimeout(() => {
+  scheduler.after('drift', delay, () => {
     if (!isDragging.value && !isSleeping.value && window.api) {
       const dx = Math.round((Math.random() - 0.5) * 160)
       const dy = Math.round((Math.random() - 0.5) * 80)
       animateDrift(dx, dy)
     }
     scheduleDrift()
-  }, delay)
+  })
 }
 
 function animateDrift(totalDx: number, totalDy: number) {
@@ -338,11 +331,11 @@ function animateDrift(totalDx: number, totalDy: number) {
   const stepDx = totalDx / steps
   const stepDy = totalDy / steps
   let step = 0
-  const iv = setInterval(() => {
+  scheduler.every('drift-anim', 40, () => {
     if (window.api) window.api.moveWindow(Math.round(stepDx), Math.round(stepDy))
     step++
-    if (step >= steps) clearInterval(iv)
-  }, 40)
+    if (step >= steps) scheduler.cancel('drift-anim')
+  })
 }
 
 // ── 计算属性 ──────────────────────────────────────
@@ -443,8 +436,6 @@ const displaySubMessage = computed(() => {
 })
 
 // ── 生命周期 ──────────────────────────────────────
-let clockTimer: ReturnType<typeof setInterval>
-
 onMounted(async () => {
   if (window.api) {
     workEndTime.value = await window.api.getWorkEndTime()
@@ -455,7 +446,7 @@ onMounted(async () => {
     })
   }
 
-  clockTimer = setInterval(() => { currentTime.value = new Date() }, 10 * MS_PER_SECOND)
+  scheduler.every('clock', 10 * MS_PER_SECOND, () => { currentTime.value = new Date() })
 
   document.addEventListener('mousemove', onMouseMove)
   document.addEventListener('mouseup', stopDrag)
@@ -467,10 +458,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  clearInterval(clockTimer)
-  if (zzzInterval) clearInterval(zzzInterval)
-  ;[interactTimer, scaredTimer, sleepTimer, comboResetTimer, rainbowTimer, waterReminderTimer]
-    .forEach(t => t && clearTimeout(t))
+  // 定时器由 usePetScheduler 在卸载时统一取消
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', stopDrag)
 })
