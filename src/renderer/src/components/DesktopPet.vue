@@ -144,6 +144,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useDrag } from '../composables/useDrag'
 import { usePetScheduler } from '../composables/usePetScheduler'
+import { petTime } from '../lib/petTime'
 
 // ── 定时器调度 ────────────────────────────────────
 // 全部定时行为的唯一属主；句柄不离开模块，卸载时自动全部取消
@@ -157,7 +158,6 @@ const tempTime = ref('18:00')
 
 const MS_PER_SECOND = 1000
 const MS_PER_MINUTE = 60 * MS_PER_SECOND
-const MS_PER_HOUR = 60 * MS_PER_MINUTE
 
 // ── 鼠标追踪 ──────────────────────────────────────
 const fishSvgRef = ref<SVGElement | null>(null)
@@ -343,21 +343,9 @@ function animateDrift(totalDx: number, totalDy: number) {
 }
 
 // ── 计算属性 ──────────────────────────────────────
-const remainingMinutes = computed(() => {
-  const now = currentTime.value
-  const [endHour, endMin] = workEndTime.value.split(':').map(Number)
-  const endMs = endHour * MS_PER_HOUR + endMin * MS_PER_MINUTE
-  const nowMs = now.getHours() * MS_PER_HOUR + now.getMinutes() * MS_PER_MINUTE + now.getSeconds() * MS_PER_SECOND
-  return Math.floor((endMs - nowMs) / MS_PER_MINUTE)
-})
-
-const mood = computed(() => {
-  const min = remainingMinutes.value
-  if (min < 0) return 'sad'
-  if (min <= 30) return 'nervous'
-  if (min <= 120) return 'happy'
-  return 'normal'
-})
+// 时间推导：心情阈值与文案分级都在 petTime 模块内部
+const timeInfo = computed(() => petTime(currentTime.value, workEndTime.value))
+const mood = computed(() => timeInfo.value.mood)
 
 // 有效心情（覆盖层：受惊 > 睡眠 > 原心情）
 const effectiveMood = computed(() => {
@@ -405,38 +393,15 @@ const eyeHighlightX = computed(() => eyeX.value + 1)
 const eyeHighlightY = computed(() => eyeY.value - 2)
 
 // 气泡显示内容
-const timeMessage = computed(() => {
-  const min = remainingMinutes.value
-  if (min < 0) {
-    const o = Math.abs(min)
-    const h = Math.floor(o / 60), m = o % 60
-    return h > 0 ? `加班 ${h}小时${m > 0 ? m + '分' : ''}了！` : `加班 ${m} 分钟了！`
-  }
-  if (min === 0) return '到点下班啦！'
-  const h = Math.floor(min / 60), m = min % 60
-  return h > 0 ? `还有 ${h}小时${m > 0 ? m + '分' : ''}` : `还有 ${m} 分钟`
-})
-
-const subMessage = computed(() => {
-  const min = remainingMinutes.value
-  if (min < 0) return '摸鱼人，快跑！'
-  if (min === 0) return '收拾东西！'
-  if (min <= 10) return '马上下班！冲！'
-  if (min <= 30) return '准备收工啦~'
-  if (min <= 60) return '快了快了...'
-  if (min <= 120) return '继续加油 ~'
-  return '好好摸鱼吧'
-})
-
 const displayMessage = computed(() => {
   if (isSleeping.value) return 'Z z z ...'
-  return interactMessage.value || timeMessage.value
+  return interactMessage.value || timeInfo.value.message
 })
 
 const displaySubMessage = computed(() => {
   if (isSleeping.value) return '（睡着了，别吵我）'
   if (interactMessage.value) return ''
-  return subMessage.value
+  return timeInfo.value.subMessage
 })
 
 // ── 生命周期 ──────────────────────────────────────
