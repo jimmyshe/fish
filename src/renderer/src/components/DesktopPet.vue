@@ -37,7 +37,7 @@
     <!-- 小鱼 SVG；点击/拖拽/右键的命中区域只有鱼本体，透明 padding 一律穿透 -->
     <div
       class="fish-wrap"
-      :class="[effectiveMoodClass, { 'is-hovered': isHovered, 'is-rainbow': isRainbow }]"
+      :class="[effectiveMoodClass, { 'is-hovered': isHovered, 'is-rainbow': isRainbow, 'face-left': facingLeft }]"
       @mousedown.left="startDrag"
       @contextmenu.prevent="onRightClick"
       @mouseenter="onFishHover"
@@ -153,7 +153,19 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useDrag } from '../composables/useDrag'
 import { usePetScheduler } from '../composables/usePetScheduler'
 import { petTime } from '../lib/petTime'
-import { clampFishPosition, isInFishArea, resolveInitialFishPosition } from '../lib/fishPosition'
+import { clampFishPosition, resolveInitialFishPosition } from '../lib/fishPosition'
+import {
+  MOTION,
+  avoidanceForce,
+  computeFacing,
+  dashDirection,
+  edgeForce,
+  fishCenter,
+  integrateVelocity,
+  shouldScare,
+  stepWanderAngle,
+  FISH_CONTAINER
+} from '../lib/fishMotion'
 
 // ── 定时器调度 ────────────────────────────────────
 // 全部定时行为的唯一属主；句柄不离开模块，卸载时自动全部取消
@@ -282,6 +294,12 @@ function triggerScared() {
   const msgs = ['呀！！', '不要过来！', '救命！', '太快了！', '(ﾟДﾟ)！']
   showMsg(msgs[Math.floor(Math.random() * msgs.length)], 1500)
   spawnParticles(['！', '💦', '😱'], 3, 'scare')
+  // 逃窜：优先于漫游，朝远离鼠标方向冲刺一次
+  const dir = dashDirection(fishCenter(fishPos.value), hasMouseData ? mousePos.value : null)
+  swimState.phase = 'dash'
+  swimState.vx = dir.x * MOTION.DASH_SPEED
+  swimState.vy = dir.y * MOTION.DASH_SPEED
+  swimState.phaseLeftMs = MOTION.DASH_MS
   scheduler.after('scared', 1800, () => { isScared.value = false })
 }
 
@@ -385,32 +403,87 @@ function scheduleMonologue() {
 }
 
 // ── 自主漂移 ──────────────────────────────────────
-// 保持原有漂移节奏，只是改为在游乐场（全屏）范围内移动鱼元素
-function scheduleDrift() {
-  const delay = (35 + Math.random() * 35) * MS_PER_SECOND // 35~70秒
-  scheduler.after('drift', delay, () => {
-    if (!isDragging.value && !isSleeping.value) {
-      const dx = Math.round((Math.random() - 0.5) * 160)
-      const dy = Math.round((Math.random() - 0.5) * 80)
-      animateDrift(dx, dy)
-    }
-    scheduleDrift()
-  })
+// 常驻 tick 驱动速度向量积分（漫游），取代旧的定时小幅跳动：
+// 漫游转向力 + 边缘软斥力 + 鼠标回避场叠加；鼠标快速贴近触发受惊 →
+// 优先执行一次逃窜，结束后恢复漫游。偶尔停歇。
+// 拖拽 / 睡眠 / 设置弹窗期间 tick 照跑但不积分（鱼保持不动）。
+const swimState = {
+  phase: 'swim' as 'swim' | 'pause' | 'dash',
+  vx: 0,
+  vy: 0,
+  angle: Math.random() * Math.PI * 2,
+  cruise: MOTION.CRUISE_MIN,
+  phaseLeftMs: randRange(MOTION.SWIM_LEG_MIN_MS, MOTION.SWIM_LEG_MAX_MS)
+}
+const facingLeft = ref(false)
+// 收到过鼠标数据后才启用避鼠（初始 {0,0} 是屏幕角落，不是真实鼠标位置）
+let hasMouseData = false
+let lastTickAt = 0
+
+function randRange(min: number, max: number) {
+  return min + Math.random() * (max - min)
 }
 
-function animateDrift(totalDx: number, totalDy: number) {
-  const steps = 25
-  const stepDx = totalDx / steps
-  const stepDy = totalDy / steps
-  let step = 0
-  scheduler.every('drift-anim', 40, () => {
-    moveFishBy(Math.round(stepDx), Math.round(stepDy))
-    step++
-    if (step >= steps) {
-      scheduler.cancel('drift-anim')
-      persistFishPosition()
+function swimTick() {
+  const now = Date.now()
+  if (lastTickAt === 0) lastTickAt = now
+  // dt 封顶 0.1s：窗口挂起恢复时不至于一步跳太远
+  const dt = Math.min((now - lastTickAt) / MS_PER_SECOND, 0.1)
+  lastTickAt = now
+
+  if (isDragging.value || isSleeping.value || showSettings.value) return
+
+  swimState.phaseLeftMs -= dt * MS_PER_SECOND
+
+  if (swimState.phase === 'swim' && swimState.phaseLeftMs <= 0) {
+    swimState.phase = 'pause'
+    swimState.phaseLeftMs = randRange(MOTION.PAUSE_MIN_MS, MOTION.PAUSE_MAX_MS)
+    swimState.vx = 0
+    swimState.vy = 0
+    persistFishPosition() // 停歇即停靠点：落盘
+  } else if (swimState.phaseLeftMs <= 0) {
+    // pause / dash 结束：恢复漫游（逃窜结束的停靠点也落盘）
+    if (swimState.phase === 'dash') persistFishPosition()
+    swimState.phase = 'swim'
+    swimState.phaseLeftMs = randRange(MOTION.SWIM_LEG_MIN_MS, MOTION.SWIM_LEG_MAX_MS)
+    swimState.cruise = randRange(MOTION.CRUISE_MIN, MOTION.CRUISE_MAX)
+  }
+
+  if (swimState.phase === 'pause') return
+
+  if (swimState.phase === 'dash') {
+    moveFishBy(swimState.vx * dt, swimState.vy * dt)
+  } else {
+    swimState.angle = stepWanderAngle(swimState.angle, MOTION.WANDER_JITTER)
+    const desired = {
+      x: Math.cos(swimState.angle) * swimState.cruise,
+      y: Math.sin(swimState.angle) * swimState.cruise
     }
-  })
+    const mouse = hasMouseData ? mousePos.value : null
+    const vel = integrateVelocity(
+      { x: swimState.vx, y: swimState.vy },
+      desired,
+      [
+        avoidanceForce(fishCenter(fishPos.value), mouse, MOTION.AVOID_RADIUS, MOTION.AVOID_STRENGTH),
+        edgeForce(
+          fishPos.value,
+          FISH_CONTAINER,
+          { x: window.innerWidth, y: window.innerHeight },
+          MOTION.EDGE_MARGIN,
+          MOTION.EDGE_STRENGTH
+        )
+      ],
+      dt,
+      MOTION.MAX_SPEED,
+      MOTION.TURN_RATE
+    )
+    swimState.vx = vel.x
+    swimState.vy = vel.y
+    moveFishBy(vel.x * dt, vel.y * dt)
+  }
+
+  const facing = computeFacing(swimState.vx, facingLeft.value ? -1 : 1, MOTION.FACE_DEADZONE)
+  facingLeft.value = facing === -1
 }
 
 // ── 计算属性 ──────────────────────────────────────
@@ -511,12 +584,16 @@ onMounted(async () => {
 
   resetSleepTimer()
   scheduleMonologue()
-  scheduleDrift()
+  scheduler.every('swim-tick', MOTION.TICK_MS, swimTick)
   scheduleWaterReminder()
+
+  // 卸载前把当前位置落盘（游动中途不存，只存停靠点）
+  window.addEventListener('beforeunload', persistFishPosition)
 })
 
 onUnmounted(() => {
   document.removeEventListener('mousemove', handleHitTest)
+  window.removeEventListener('beforeunload', persistFishPosition)
   unsubscribeGlobal.forEach((off) => off())
 })
 
@@ -525,17 +602,20 @@ onUnmounted(() => {
 // 鼠标活动统一入口：全局钩子（30Hz 节流）与窗口内 mousemove 降级共用
 function handleMouseActivity(x: number, y: number) {
   mousePos.value = { x, y }
+  hasMouseData = true
   resetSleepTimer()
 
-  // 检测鼠标速度 → 受惊；只在鼠标位于鱼附近时判定（旧小窗时代的隐式约束，
-  // 全局鼠标追踪下远处的快速移动不应惊吓鱼）
+  // 受惊判定：鼠标「快速」且「贴近」（贴脸半径内）才触发；
+  // 慢慢靠近只被回避场推开，不惊吓鱼
   const now = Date.now()
   const dt = now - lastMouseTime
-  if (dt > 0 && dt < 80 && isInFishArea(x, y, fishPos.value)) {
+  if (dt > 0 && dt < 80 && !isScared.value && !isSleeping.value) {
     const dx = x - lastMouseClientPos.x
     const dy = y - lastMouseClientPos.y
     const speed = Math.sqrt(dx * dx + dy * dy) / dt
-    if (speed > 2.5 && !isScared.value && !isSleeping.value) {
+    const c = fishCenter(fishPos.value)
+    const dist = Math.hypot(x - c.x, y - c.y)
+    if (shouldScare(speed, dist, MOTION.NEAR_RADIUS, MOTION.SCARE_SPEED)) {
       triggerScared()
     }
   }
@@ -727,6 +807,10 @@ async function saveSettings() {
   cursor: grab;
 }
 .fish-wrap:active { cursor: grabbing; }
+
+/* 朝向：向左游时水平翻转（SVG 原图朝右）；徽章文字反向翻转避免镜像 */
+.fish-wrap.face-left { transform: scaleX(-1); }
+.fish-wrap.face-left .combo-badge { scale: -1 1; }
 
 .fish-svg {
   width: 130px; height: 90px;

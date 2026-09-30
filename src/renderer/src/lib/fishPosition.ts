@@ -42,16 +42,3 @@ export function clampFishPosition(
     y: Math.min(Math.max(y, 0), Math.max(screenHeight - FISH_CONTAINER_HEIGHT, 0))
   }
 }
-
-/**
- * 屏幕坐标是否落在鱼所在区域（容器范围）内。
- * 全局鼠标追踪下用于受惊判定的“附近”约束：远处的快速移动不应惊吓鱼。
- */
-export function isInFishArea(x: number, y: number, fishPos: FishPosition): boolean {
-  return (
-    x >= fishPos.x &&
-    x < fishPos.x + FISH_CONTAINER_WIDTH &&
-    y >= fishPos.y &&
-    y < fishPos.y + FISH_CONTAINER_HEIGHT
-  )
-}

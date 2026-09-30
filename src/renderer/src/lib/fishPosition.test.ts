@@ -3,7 +3,6 @@ import {
   clampFishPosition,
   FISH_CONTAINER_HEIGHT,
   FISH_CONTAINER_WIDTH,
-  isInFishArea,
   resolveInitialFishPosition
 } from './fishPosition'
 
@@ -35,21 +34,5 @@ describe('clampFishPosition', () => {
       x: 1920 - FISH_CONTAINER_WIDTH,
       y: 1080 - FISH_CONTAINER_HEIGHT
     })
-  })
-})
-
-describe('isInFishArea', () => {
-  const pos = { x: 1000, y: 600 }
-
-  it('容器范围内的坐标算在鱼附近', () => {
-    expect(isInFishArea(1000, 600, pos)).toBe(true)
-    expect(isInFishArea(1000 + FISH_CONTAINER_WIDTH - 1, 600 + FISH_CONTAINER_HEIGHT - 1, pos)).toBe(true)
-  })
-
-  it('容器范围外的坐标不算（远处快速移动不应惊吓鱼）', () => {
-    expect(isInFishArea(999, 600, pos)).toBe(false)
-    expect(isInFishArea(1000 + FISH_CONTAINER_WIDTH, 600, pos)).toBe(false)
-    expect(isInFishArea(1000, 600 + FISH_CONTAINER_HEIGHT, pos)).toBe(false)
-    expect(isInFishArea(0, 0, pos)).toBe(false)
   })
 })
