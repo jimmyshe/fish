@@ -27,8 +27,9 @@ vi.mock('@electron-toolkit/utils', () => ({
 type Template = Array<Record<string, unknown>>
 
 function makeDeps(configOverrides: Partial<MenuConfig> = {}) {
-  const config: MenuConfig = { workEndTime: '18:00', autoLaunch: false, ...configOverrides }
+  const config: MenuConfig = { workEndTime: '18:00', autoLaunch: false, globalMouseTracking: true, ...configOverrides }
   const setConfig = vi.fn()
+  const applyGlobalMouseTracking = vi.fn()
   const tray = { setContextMenu: mocks.setContextMenu }
   const win = {
     webContents: { send: mocks.send },
@@ -42,9 +43,10 @@ function makeDeps(configOverrides: Partial<MenuConfig> = {}) {
     getTray: () => tray as never,
     getWindow: () => win as never,
     getConfig: () => config,
-    setConfig
+    setConfig,
+    applyGlobalMouseTracking
   }
-  return { deps, config, setConfig, tray, win }
+  return { deps, config, setConfig, applyGlobalMouseTracking, tray, win }
 }
 
 function lastTemplate(): Template {
@@ -58,7 +60,7 @@ describe('menu module', () => {
     mocks.electronKit.is.dev = false
   })
 
-  it('tray 菜单：含下班时间与「显示/隐藏」，不含「置顶」', () => {
+  it('tray 菜单：含下班时间、「显示/隐藏」与「全局鼠标追踪」，不含「置顶」', () => {
     const { deps } = makeDeps({ workEndTime: '18:30' })
     const menu = createMenuModule(deps)
     menu.updateTrayMenu()
@@ -66,11 +68,12 @@ describe('menu module', () => {
     const labels = lastTemplate().map(i => i.label)
     expect(labels).toContain('🕐 下班时间: 18:30')
     expect(labels).toContain('👁 显示/隐藏')
+    expect(labels).toContain('🖱 全局鼠标追踪')
     expect(labels).not.toContain('📌 置顶')
     expect(mocks.setContextMenu).toHaveBeenCalledTimes(1)
   })
 
-  it('右键菜单：含「置顶」，不含「显示/隐藏」', () => {
+  it('右键菜单：含「置顶」，不含「显示/隐藏」与「全局鼠标追踪」', () => {
     const { deps } = makeDeps()
     const menu = createMenuModule(deps)
     menu.popupContextMenu()
@@ -78,6 +81,7 @@ describe('menu module', () => {
     const labels = lastTemplate().map(i => i.label)
     expect(labels).toContain('📌 置顶')
     expect(labels).not.toContain('👁 显示/隐藏')
+    expect(labels).not.toContain('🖱 全局鼠标追踪')
     expect(mocks.buildFromTemplate.mock.results.at(-1)!.value.popup).toHaveBeenCalled()
   })
 
@@ -127,5 +131,24 @@ describe('menu module', () => {
     ;(item.click as () => void)()
 
     expect(mocks.send).toHaveBeenCalledWith('open-settings')
+  })
+
+  it('「全局鼠标追踪」勾选：更新 → 应用 → 刷新，顺序固定', () => {
+    const { deps, setConfig, applyGlobalMouseTracking } = makeDeps({ globalMouseTracking: true })
+    const menu = createMenuModule(deps)
+    menu.updateTrayMenu()
+
+    const item = lastTemplate().find(i => i.label === '🖱 全局鼠标追踪')!
+    expect(item.type).toBe('checkbox')
+    expect(item.checked).toBe(true)
+    ;(item.click as (i: { checked: boolean }) => void)({ checked: false })
+
+    expect(setConfig).toHaveBeenCalledWith({ globalMouseTracking: false })
+    expect(applyGlobalMouseTracking).toHaveBeenCalledWith(false)
+    expect(mocks.setContextMenu).toHaveBeenCalledTimes(2) // 初次构建 + 切换后刷新
+    expect(setConfig.mock.invocationCallOrder[0])
+      .toBeLessThan(applyGlobalMouseTracking.mock.invocationCallOrder[0])
+    expect(applyGlobalMouseTracking.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.setContextMenu.mock.invocationCallOrder[1])
   })
 })

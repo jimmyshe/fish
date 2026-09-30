@@ -11,7 +11,7 @@
 
 ```
 src/
-├── main/          # Electron main process (window, tray, IPC, config persistence)
+├── main/          # Electron main process (playground window, tray, IPC, config persistence, global mouse hook)
 ├── preload/       # Context-isolated API bridge (window.api)
 └── renderer/      # Vue 3 frontend (DesktopPet.vue is the core component)
 ```
@@ -19,10 +19,11 @@ src/
 ## Key Conventions
 
 - **Language**: Chinese (README, code comments, UI strings)
-- **Config persistence**: JSON stored in `app.getPath('userData')/config.json`; owned by the configStore module (`src/main/config.ts`, debounced writes, flushed on will-quit). The `Config` type and the `window.api` contract live in `src/shared/` as the single source for all three processes
+- **Config persistence**: JSON stored in `app.getPath('userData')/config.json`; owned by the configStore module (`src/main/config.ts`, debounced writes, flushed on will-quit). The `Config` type and the `window.api` contract live in `src/shared/` as the single source for all three processes. `windowX/windowY` 语义为鱼元素在屏幕内的位置（不再是窗口位置）
 - **IPC**: Renderer uses `window.api` (exposed via preload); main process uses `ipcMain.handle/on`
 - **Auto-launch**: Only applies in production builds; silently skipped in dev mode (`is.dev`)
-- **Window**: Frameless, transparent, always-on-top, non-resizable desktop widget
+- **Window**: 全屏游乐场窗口 —— frameless, transparent, always-on-top, non-resizable, `focusable: false`，覆盖整个主屏并固定于 (0,0)；默认 `setIgnoreMouseEvents(true, {forward: true})` 全屏穿透，renderer 经 `elementFromPoint` 命中检测 + `set-click-through` IPC 在光标位于鱼/UI 上时临时关闭穿透。鱼是窗口内的定位元素
+- **Global mouse tracking**: `src/main/globalMouse.ts`（uiohook-napi，mousemove 30Hz 节流推送，点击不节流）；config `globalMouseTracking` 开关（默认 true），托盘菜单可切换；Linux Wayland 下静默降级为窗口内追踪。electron-builder 需保持 `npmRebuild: false` + `asarUnpack` uiohook-napi
 
 ## CI / Release
 

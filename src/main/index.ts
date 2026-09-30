@@ -3,43 +3,46 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { createMenuModule } from './menu'
 import { createConfigStore, type ConfigStore } from './config'
+import { startGlobalMouseTracking, stopGlobalMouseTracking } from './globalMouse'
 
 let configStore: ConfigStore
 let mainWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+
+/** 按配置开关即时 start/stop 全局鼠标钩子 */
+function applyGlobalMouseTracking(enabled: boolean): void {
+  if (enabled && mainWindow) {
+    startGlobalMouseTracking(mainWindow)
+  } else {
+    stopGlobalMouseTracking()
+  }
+}
 
 // 菜单模块：tray / 右键菜单 / 自启动序列的唯一属主
 const menu = createMenuModule({
   getTray: () => tray,
   getWindow: () => mainWindow,
   getConfig: () => configStore.get(),
-  setConfig: (patch) => { configStore.set(patch) }
+  setConfig: (patch) => { configStore.set(patch) },
+  applyGlobalMouseTracking
 })
 
-function getInitialPosition(): { x: number; y: number } {
-  const { windowX, windowY } = configStore.get()
-  if (windowX >= 0 && windowY >= 0) {
-    return { x: windowX, y: windowY }
-  }
-  const display = screen.getPrimaryDisplay()
-  const { width, height } = display.workAreaSize
-  return { x: width - 340, y: height - 220 }
-}
-
 function createWindow(): void {
-  const { x, y } = getInitialPosition()
+  // 游乐场窗口：覆盖整个主屏（含任务栏区域），固定于 (0,0)，只支持主屏
+  const { width, height } = screen.getPrimaryDisplay().bounds
 
   mainWindow = new BrowserWindow({
-    width: 320,
-    height: 200,
-    x,
-    y,
+    width,
+    height,
+    x: 0,
+    y: 0,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
     skipTaskbar: true,
     resizable: false,
     hasShadow: false,
+    focusable: false,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -51,17 +54,15 @@ function createWindow(): void {
     mainWindow.setAlwaysOnTop(true, 'screen-saver')
   }
 
+  // 默认全屏穿透（forward 让 renderer 仍收得到 mousemove）；
+  // renderer 通过动态命中检测经 set-click-through 临时关闭穿透
+  mainWindow.setIgnoreMouseEvents(true, { forward: true })
+
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
     mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
   }
-
-  mainWindow.on('moved', () => {
-    if (!mainWindow) return
-    const [wx, wy] = mainWindow.getPosition()
-    configStore.set({ windowX: wx, windowY: wy })
-  })
 }
 
 function createTray(): void {
@@ -73,10 +74,24 @@ function createTray(): void {
 }
 
 // IPC handlers
-ipcMain.on('move-window', (_event, deltaX: number, deltaY: number) => {
+ipcMain.on('set-click-through', (_event, ignore: boolean) => {
   if (!mainWindow) return
-  const [x, y] = mainWindow.getPosition()
-  mainWindow.setPosition(x + deltaX, y + deltaY)
+  mainWindow.setIgnoreMouseEvents(ignore, ignore ? { forward: true } : undefined)
+})
+
+ipcMain.handle('get-fish-position', () => {
+  const { windowX, windowY } = configStore.get()
+  return { x: windowX, y: windowY }
+})
+
+ipcMain.on('set-fish-position', (_event, x: number, y: number) => {
+  configStore.set({ windowX: Math.round(x), windowY: Math.round(y) })
+})
+
+ipcMain.on('set-global-mouse-tracking', (_event, enabled: boolean) => {
+  configStore.set({ globalMouseTracking: enabled })
+  applyGlobalMouseTracking(enabled)
+  menu.updateTrayMenu()
 })
 
 ipcMain.handle('get-work-end-time', () => {
@@ -105,6 +120,9 @@ app.whenReady().then(() => {
 
   createWindow()
   createTray()
+
+  // 按配置启动全局鼠标追踪（默认开启；Wayland 下静默降级）
+  applyGlobalMouseTracking(configStore.get().globalMouseTracking)
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

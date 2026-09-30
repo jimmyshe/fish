@@ -76,4 +76,10 @@ describe('configStore', () => {
     store = createConfigStore({ configPath })
     expect(store.get()).toEqual({ ...DEFAULT_CONFIG, workEndTime: '19:00' })
   })
+
+  it('旧配置缺 globalMouseTracking：默认补齐为 true（追踪默认开启）', () => {
+    writeFileSync(configPath, JSON.stringify({ workEndTime: '19:00', windowX: 100, windowY: 200 }), 'utf-8')
+    store = createConfigStore({ configPath })
+    expect(store.get().globalMouseTracking).toBe(true)
+  })
 })

@@ -6,6 +6,7 @@ import { is } from '@electron-toolkit/utils'
 export interface MenuConfig {
   workEndTime: string
   autoLaunch: boolean
+  globalMouseTracking: boolean
 }
 
 export interface MenuDeps {
@@ -13,6 +14,8 @@ export interface MenuDeps {
   getWindow: () => BrowserWindow | null
   getConfig: () => MenuConfig
   setConfig: (patch: Partial<MenuConfig>) => void
+  /** 全局鼠标追踪开关变更后即时应用（start/stop 钩子） */
+  applyGlobalMouseTracking: (enabled: boolean) => void
 }
 
 /**
@@ -30,7 +33,7 @@ export function createMenuModule(deps: MenuDeps) {
     })
   }
 
-  function buildMenu(opts: { showToggle?: boolean; showPin?: boolean }): MenuItemConstructorOptions[] {
+  function buildMenu(opts: { showToggle?: boolean; showPin?: boolean; showMouseTracking?: boolean }): MenuItemConstructorOptions[] {
     const config = deps.getConfig()
     const mainWindow = deps.getWindow()
     const items: MenuItemConstructorOptions[] = [
@@ -74,6 +77,15 @@ export function createMenuModule(deps: MenuDeps) {
       })
     }
 
+    if (opts.showMouseTracking) {
+      items.push({
+        label: '🖱 全局鼠标追踪',
+        type: 'checkbox',
+        checked: deps.getConfig().globalMouseTracking,
+        click: (item: MenuItem) => setGlobalMouseTracking(item.checked)
+      })
+    }
+
     items.push(
       {
         label: '🚀 开机自启动',
@@ -93,7 +105,7 @@ export function createMenuModule(deps: MenuDeps) {
   function updateTrayMenu(): void {
     const tray = deps.getTray()
     if (!tray) return
-    tray.setContextMenu(Menu.buildFromTemplate(buildMenu({ showToggle: true })))
+    tray.setContextMenu(Menu.buildFromTemplate(buildMenu({ showToggle: true, showMouseTracking: true })))
   }
 
   function popupContextMenu(): void {
@@ -108,5 +120,11 @@ export function createMenuModule(deps: MenuDeps) {
     updateTrayMenu()
   }
 
-  return { updateTrayMenu, popupContextMenu, setAutoLaunch }
+  function setGlobalMouseTracking(enabled: boolean): void {
+    deps.setConfig({ globalMouseTracking: enabled })
+    deps.applyGlobalMouseTracking(enabled)
+    updateTrayMenu()
+  }
+
+  return { updateTrayMenu, popupContextMenu, setAutoLaunch, setGlobalMouseTracking }
 }

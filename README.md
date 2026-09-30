@@ -8,10 +8,11 @@
 
 ### 🕒 核心功能
 - **下班倒计时**：实时显示距离下班的时间，精准到分钟。
-- **持久化配置**：自定义下班时间，重启应用后自动恢复设置（含窗口位置记忆）。
+- **持久化配置**：自定义下班时间，重启应用后自动恢复设置（含鱼的位置记忆）。
 - **喝水提醒**：每 45 分钟温馨提醒喝水，点击确认后重新计时。💧
 - **开机自启动**：可选随系统登录自动启动。
 - **系统托盘**：支持最小化到托盘，右键菜单快速设置与退出。
+- **全局鼠标追踪**：小鱼在全屏「游乐场窗口」中游动，无论鼠标在屏幕何处都能注视跟随；可在托盘菜单开关。支持 Windows 与 Linux X11，Wayland 下自动降级为窗口内追踪。
 
 ### 🐟 智能心情系统
 小鱼会根据剩余工作时间变换状态：
@@ -35,7 +36,7 @@
 - **框架**: [Electron 31](https://www.electronjs.org/) + [Vue 3](https://vuejs.org/)
 - **构建工具**: [electron-vite](https://electron-vite.org/)
 - **语言**: TypeScript
-- **测试**: Vitest（fake timers，29 个单元测试）
+- **测试**: Vitest（fake timers，42 个单元测试）
 - **打包**: electron-builder
 
 ---
@@ -45,9 +46,10 @@
 ```text
 src/
 ├── main/          # Electron 主进程
-│   ├── index.ts   # 窗口、托盘接线、IPC 注册
+│   ├── index.ts   # 游乐场窗口、托盘接线、IPC 注册
 │   ├── config.ts  # configStore：配置唯一属主（去抖持久化）
-│   └── menu.ts    # 菜单模块：tray / 右键菜单 / 自启动序列
+│   ├── menu.ts    # 菜单模块：tray / 右键菜单 / 自启动序列
+│   └── globalMouse.ts # 全局鼠标钩子模块（uiohook-napi，30Hz 节流）
 ├── preload/       # 预加载脚本 (安全的 API 桥接)
 ├── shared/        # 跨进程共享类型 (Config / window.api 契约)
 └── renderer/      # Vue 渲染进程
@@ -58,9 +60,10 @@ src/
         ├── composables/
         │   ├── PetScheduler.ts  # 定时器调度模块（after/every/cancel）
         │   ├── usePetScheduler.ts
-        │   └── useDrag.ts       # 拖拽模块（位移、点击判定、IPC）
+        │   └── useDrag.ts       # 拖拽模块（位移、点击判定）
         └── lib/
-            └── petTime.ts       # 时间推导模块（心情阈值与文案）
+            ├── petTime.ts       # 时间推导模块（心情阈值与文案）
+            └── fishPosition.ts  # 鱼位置纯逻辑（初始落点、屏幕收敛）
 ```
 
 ---
@@ -97,6 +100,11 @@ npm run dist
 3. **互动**：尝试点击、快速晃动鼠标或静置屏幕，探索更多动画细节。
 
 ## 📋 更新日志
+
+### v1.5.0（开发中）
+- **全屏游乐场窗口**：320×200 小窗改为覆盖主屏的透明置顶游乐场窗口，鱼变为窗口内可拖拽的定位元素，漂移范围扩展至全屏
+- **全局鼠标追踪**：基于 uiohook-napi 的全局鼠标钩子（30Hz 节流），鱼眼在全屏范围注视鼠标；托盘菜单可开关，支持 Windows 与 Linux X11，Wayland 下自动降级
+- **动态点击穿透**：默认全屏穿透，光标位于鱼或交互 UI 上时经 `elementFromPoint` 命中检测临时恢复交互
 
 ### v1.4.0
 - **架构重构**（行为零变化）：

@@ -1,5 +1,10 @@
 <template>
-  <div class="pet-wrapper" @mousedown.left="startDrag" @contextmenu.prevent="onRightClick">
+  <!-- 游乐场：覆盖整个主屏的透明层；鱼是其中的定位元素 -->
+  <div class="playground">
+    <div
+      class="pet-wrapper"
+      :style="fishStyle"
+    >
 
     <!-- 对话气泡 -->
     <div class="bubble-wrap" :class="{ 'sleeping-bubble': isSleeping && !showWaterReminder }">
@@ -29,10 +34,12 @@
       >{{ p.char }}</span>
     </div>
 
-    <!-- 小鱼 SVG -->
+    <!-- 小鱼 SVG；点击/拖拽/右键的命中区域只有鱼本体，透明 padding 一律穿透 -->
     <div
       class="fish-wrap"
       :class="[effectiveMoodClass, { 'is-hovered': isHovered, 'is-rainbow': isRainbow }]"
+      @mousedown.left="startDrag"
+      @contextmenu.prevent="onRightClick"
       @mouseenter="onFishHover"
       @mouseleave="onFishLeave"
     >
@@ -119,8 +126,9 @@
         {{ comboCount }}x COMBO!
       </div>
     </div>
+    </div>
 
-    <!-- 设置弹窗 -->
+    <!-- 设置弹窗（须在 transform 容器之外，fixed 定位才相对视口） -->
     <div v-if="showSettings" class="settings-overlay" @mousedown.stop>
       <div class="settings-panel">
         <div class="settings-title">⏰ 设置下班时间</div>
@@ -141,10 +149,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useDrag } from '../composables/useDrag'
 import { usePetScheduler } from '../composables/usePetScheduler'
 import { petTime } from '../lib/petTime'
+import { clampFishPosition, isInFishArea, resolveInitialFishPosition } from '../lib/fishPosition'
 
 // ── 定时器调度 ────────────────────────────────────
 // 全部定时行为的唯一属主；句柄不离开模块，卸载时自动全部取消
@@ -166,6 +175,62 @@ const isHovered = ref(false)
 
 let lastMouseTime = 0
 let lastMouseClientPos = { x: 0, y: 0 }
+// 最近一次收到全局鼠标事件的时间；活跃期间窗口内 mousemove 仅作降级
+let lastGlobalMouseAt = 0
+
+// ── 鱼元素位置（游乐场窗口内绝对定位，CSS transform 驱动） ──
+const fishPos = ref(
+  resolveInitialFishPosition(-1, -1, window.innerWidth, window.innerHeight)
+)
+const fishStyle = computed(() => ({
+  transform: `translate(${fishPos.value.x}px, ${fishPos.value.y}px)`
+}))
+
+function moveFishBy(dx: number, dy: number) {
+  fishPos.value = clampFishPosition(
+    fishPos.value.x + dx,
+    fishPos.value.y + dy,
+    window.innerWidth,
+    window.innerHeight
+  )
+}
+
+function persistFishPosition() {
+  if (window.api) window.api.setFishPosition(fishPos.value.x, fishPos.value.y)
+}
+
+// ── 动态点击穿透 ──────────────────────────────────
+// 默认全屏穿透；光标位于鱼本体/气泡/交互 UI 上时临时关闭。状态去重：只在变化时发 IPC。
+// 命中区域是可见元素而非 320×200 容器大框：透明 padding 一律穿透。
+const INTERACTIVE_SELECTOR = '.fish-wrap, .bubble-wrap, .settings-overlay'
+let clickThrough = true
+
+function hitInteractiveAt(x: number, y: number): boolean {
+  const el = document.elementFromPoint(x, y)
+  return !!(el && el.closest(INTERACTIVE_SELECTOR))
+}
+
+function updateClickThrough(hitInteractive: boolean) {
+  // 设置弹窗打开期间、拖拽进行期间保持不穿透
+  // （拖拽中光标会离开鱼身，此时开穿透会丢失 mouseup 导致拖拽卡死）
+  const desired = showSettings.value || isDragging.value ? false : !hitInteractive
+  if (desired === clickThrough) return
+  clickThrough = desired
+  if (window.api) window.api.setClickThrough(desired)
+}
+
+function handleHitTest(e: MouseEvent) {
+  updateClickThrough(hitInteractiveAt(e.clientX, e.clientY))
+}
+
+watch(showSettings, (open) => {
+  if (open) {
+    updateClickThrough(true) // 打开期间强制不穿透
+  } else {
+    // 关闭后按当前光标位置重新判定
+    updateClickThrough(hitInteractiveAt(lastMouseClientPos.x, lastMouseClientPos.y))
+  }
+})
 
 // ── 互动消息 ──────────────────────────────────────
 const interactMessage = ref('')
@@ -200,10 +265,12 @@ function spawnParticles(chars: string[], count: number, type = 'heart') {
 }
 
 // ── 拖拽模块 ──────────────────────────────────────
-// 位移计算、点击判定、moveWindow IPC 都在模块内部；监听自挂自拆
+// 位移计算、点击判定都在模块内部；拖鱼 = 增量移动 fishPos，结束时持久化
 const { isDragging, startDrag } = useDrag({
   onTap: onFishClick,
   onMouseMove: handleMouseMove,
+  onDragMove: moveFishBy,
+  onDragEnd: persistFishPosition,
 })
 
 // ── 受惊模式 ──────────────────────────────────────
@@ -318,10 +385,11 @@ function scheduleMonologue() {
 }
 
 // ── 自主漂移 ──────────────────────────────────────
+// 保持原有漂移节奏，只是改为在游乐场（全屏）范围内移动鱼元素
 function scheduleDrift() {
   const delay = (35 + Math.random() * 35) * MS_PER_SECOND // 35~70秒
   scheduler.after('drift', delay, () => {
-    if (!isDragging.value && !isSleeping.value && window.api) {
+    if (!isDragging.value && !isSleeping.value) {
       const dx = Math.round((Math.random() - 0.5) * 160)
       const dy = Math.round((Math.random() - 0.5) * 80)
       animateDrift(dx, dy)
@@ -336,9 +404,12 @@ function animateDrift(totalDx: number, totalDy: number) {
   const stepDy = totalDy / steps
   let step = 0
   scheduler.every('drift-anim', 40, () => {
-    if (window.api) window.api.moveWindow(Math.round(stepDx), Math.round(stepDy))
+    moveFishBy(Math.round(stepDx), Math.round(stepDy))
     step++
-    if (step >= steps) scheduler.cancel('drift-anim')
+    if (step >= steps) {
+      scheduler.cancel('drift-anim')
+      persistFishPosition()
+    }
   })
 }
 
@@ -405,6 +476,8 @@ const displaySubMessage = computed(() => {
 })
 
 // ── 生命周期 ──────────────────────────────────────
+const unsubscribeGlobal: Array<() => void> = []
+
 onMounted(async () => {
   if (window.api) {
     workEndTime.value = await window.api.getWorkEndTime()
@@ -413,7 +486,26 @@ onMounted(async () => {
       tempTime.value = workEndTime.value
       showSettings.value = true
     })
+
+    // 鱼的位置：读取持久化配置（无效值回退屏幕右下角附近）
+    const saved = await window.api.getFishPosition()
+    fishPos.value = resolveInitialFishPosition(
+      saved.x, saved.y, window.innerWidth, window.innerHeight
+    )
+
+    // 全局鼠标追踪：驱动鱼眼跟随 / 睡眠唤醒；窗口内 mousemove 作为降级
+    unsubscribeGlobal.push(window.api.onGlobalMouseMove((pos) => {
+      lastGlobalMouseAt = Date.now()
+      handleMouseActivity(pos.x, pos.y)
+    }))
+    unsubscribeGlobal.push(window.api.onGlobalMouseClick((pos) => {
+      // 全局点击暂无消费者，先留调试日志
+      console.debug('[globalMouse] click', pos)
+    }))
   }
+
+  // 动态命中检测：穿透开启时 mousemove 由 forward 转发而来
+  document.addEventListener('mousemove', handleHitTest)
 
   scheduler.every('clock', 10 * MS_PER_SECOND, () => { currentTime.value = new Date() })
 
@@ -423,25 +515,38 @@ onMounted(async () => {
   scheduleWaterReminder()
 })
 
+onUnmounted(() => {
+  document.removeEventListener('mousemove', handleHitTest)
+  unsubscribeGlobal.forEach((off) => off())
+})
+
 // ── 事件处理 ──────────────────────────────────────
 // startDrag / stopDrag / 拖拽位移已由 useDrag 模块接管
-function handleMouseMove(e: MouseEvent) {
-  mousePos.value = { x: e.clientX, y: e.clientY }
+// 鼠标活动统一入口：全局钩子（30Hz 节流）与窗口内 mousemove 降级共用
+function handleMouseActivity(x: number, y: number) {
+  mousePos.value = { x, y }
   resetSleepTimer()
 
-  // 检测鼠标速度 → 受惊
+  // 检测鼠标速度 → 受惊；只在鼠标位于鱼附近时判定（旧小窗时代的隐式约束，
+  // 全局鼠标追踪下远处的快速移动不应惊吓鱼）
   const now = Date.now()
   const dt = now - lastMouseTime
-  if (dt > 0 && dt < 80) {
-    const dx = e.clientX - lastMouseClientPos.x
-    const dy = e.clientY - lastMouseClientPos.y
+  if (dt > 0 && dt < 80 && isInFishArea(x, y, fishPos.value)) {
+    const dx = x - lastMouseClientPos.x
+    const dy = y - lastMouseClientPos.y
     const speed = Math.sqrt(dx * dx + dy * dy) / dt
     if (speed > 2.5 && !isScared.value && !isSleeping.value) {
       triggerScared()
     }
   }
   lastMouseTime = now
-  lastMouseClientPos = { x: e.clientX, y: e.clientY }
+  lastMouseClientPos = { x, y }
+}
+
+// 窗口内 mousemove：全局追踪活跃时让位（避免双源互相干扰），否则作为降级数据源
+function handleMouseMove(e: MouseEvent) {
+  if (Date.now() - lastGlobalMouseAt < 1000) return
+  handleMouseActivity(e.clientX, e.clientY)
 }
 
 function onFishHover() { isHovered.value = true }
@@ -479,16 +584,22 @@ async function saveSettings() {
 </script>
 
 <style scoped>
+/* 游乐场：覆盖整个主屏的透明层，鱼的游动范围 */
+.playground {
+  position: fixed;
+  inset: 0;
+}
+
 .pet-wrapper {
   width: 320px;
   height: 200px;
-  position: relative;
-  cursor: grab;
+  position: absolute;
+  left: 0;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: flex-end;
 }
-.pet-wrapper:active { cursor: grabbing; }
 
 /* ── 气泡 ── */
 .bubble-wrap {
@@ -613,7 +724,9 @@ async function saveSettings() {
   position: absolute; right: 0;
   width: 140px; height: 100px;
   display: flex; align-items: center; justify-content: center;
+  cursor: grab;
 }
+.fish-wrap:active { cursor: grabbing; }
 
 .fish-svg {
   width: 130px; height: 90px;

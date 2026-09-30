@@ -15,6 +15,10 @@
   "build": {
     "appId": "com.fish.pet",
     "productName": "fish-pet",
+    "npmRebuild": false,
+    "asarUnpack": [
+      "node_modules/uiohook-napi/**"
+    ],
     "directories": {
       "output": "dist_electron"
     },
@@ -42,6 +46,7 @@
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
+    "uiohook-napi": "^1.5.5",
     "vue": "^3.4.0"
   },
   "devDependencies": {
