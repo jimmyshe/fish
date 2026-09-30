@@ -1,6 +1,6 @@
 {
   "name": "fish-pet",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "A desktop pet that reminds you when to get off work",
   "main": "./out/main/index.js",
   "author": {
@@ -41,7 +41,8 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "dist": "electron-vite build && electron-builder",
-    "test": "vitest run"
+    "test": "vitest run",
+    "generate:tray-icon": "node scripts/generate-tray-icon.mjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",

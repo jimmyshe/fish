@@ -4,6 +4,7 @@ import { is } from '@electron-toolkit/utils'
 import { createMenuModule } from './menu'
 import { createConfigStore, type ConfigStore } from './config'
 import { startGlobalMouseTracking, stopGlobalMouseTracking } from './globalMouse'
+import trayIconUrl from './tray-icon.png?inline'
 
 let configStore: ConfigStore
 let mainWindow: BrowserWindow | null = null
@@ -66,8 +67,8 @@ function createWindow(): void {
 }
 
 function createTray(): void {
-  // 1x1 透明图标占位，实际用 emoji 作为 tooltip
-  const icon = nativeImage.createEmpty()
+  // 托盘图标：生成的 32×32 小鱼（scripts/generate-tray-icon.mjs）
+  const icon = nativeImage.createFromDataURL(trayIconUrl)
   tray = new Tray(icon)
   tray.setToolTip('摸鱼宠物 🐟')
   menu.updateTrayMenu()
