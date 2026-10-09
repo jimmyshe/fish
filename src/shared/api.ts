@@ -1,4 +1,4 @@
-import type { Config } from './config'
+import type { Config, Poop } from './config'
 
 /** 屏幕坐标点（游乐场窗口覆盖主屏且位于 (0,0)，client 坐标即屏幕坐标） */
 export interface ScreenPoint {
@@ -18,6 +18,16 @@ export interface Api {
   setClickThrough: (ignore: boolean) => void
   /** 开关全局鼠标追踪（主进程即时 start/stop 钩子） */
   setGlobalMouseTracking: (enabled: boolean) => void
+  /** 读取拉屎开关 */
+  getPoopEnabled: () => Promise<boolean>
+  /** 开关拉屎（renderer 侧调用；托盘菜单切换则经 onPoopEnabledChanged 推送回来） */
+  setPoopEnabled: (enabled: boolean) => void
+  /** 订阅拉屎开关变化（主→渲染推送），返回取消订阅函数 */
+  onPoopEnabledChanged: (callback: (enabled: boolean) => void) => () => void
+  /** 读取已拉出的屎列表（重启恢复用） */
+  getPoops: () => Promise<Poop[]>
+  /** 持久化屎列表（每次增删即调用） */
+  setPoops: (poops: Poop[]) => void
   showContextMenu: () => void
   quit: () => void
   onOpenSettings: (callback: () => void) => () => void

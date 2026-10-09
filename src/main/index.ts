@@ -5,6 +5,7 @@ import { createMenuModule } from './menu'
 import { createConfigStore, type ConfigStore } from './config'
 import { startGlobalMouseTracking, stopGlobalMouseTracking } from './globalMouse'
 import { startAlwaysOnTopWatchdog } from './alwaysOnTop'
+import type { Poop } from '../shared/config'
 import trayIconUrl from './tray-icon.png?inline'
 
 let configStore: ConfigStore
@@ -26,7 +27,9 @@ const menu = createMenuModule({
   getWindow: () => mainWindow,
   getConfig: () => configStore.get(),
   setConfig: (patch) => { configStore.set(patch) },
-  applyGlobalMouseTracking
+  applyGlobalMouseTracking,
+  // 拉屎开关：推送给 renderer 即时启停定时排泄调度
+  applyPoopEnabled: (enabled) => { mainWindow?.webContents.send('poop-enabled-changed', enabled) }
 })
 
 function createWindow(): void {
@@ -94,6 +97,24 @@ ipcMain.on('set-global-mouse-tracking', (_event, enabled: boolean) => {
   configStore.set({ globalMouseTracking: enabled })
   applyGlobalMouseTracking(enabled)
   menu.updateTrayMenu()
+})
+
+ipcMain.handle('get-poop-enabled', () => {
+  return configStore.get().poopEnabled
+})
+
+ipcMain.on('set-poop-enabled', (_event, enabled: boolean) => {
+  // renderer 发起的切换：renderer 本地已应用，这里只落盘并刷新托盘勾选
+  configStore.set({ poopEnabled: enabled })
+  menu.updateTrayMenu()
+})
+
+ipcMain.handle('get-poops', () => {
+  return configStore.get().poops
+})
+
+ipcMain.on('set-poops', (_event, poops: Poop[]) => {
+  configStore.set({ poops })
 })
 
 ipcMain.handle('get-work-end-time', () => {

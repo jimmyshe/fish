@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { Api } from '../shared/api'
 import type { ScreenPoint } from '../shared/api'
+import type { Poop } from '../shared/config'
 
 const api: Api = {
   getWorkEndTime: (): Promise<string> => {
@@ -21,6 +22,23 @@ const api: Api = {
   },
   setGlobalMouseTracking: (enabled: boolean): void => {
     ipcRenderer.send('set-global-mouse-tracking', enabled)
+  },
+  getPoopEnabled: (): Promise<boolean> => {
+    return ipcRenderer.invoke('get-poop-enabled')
+  },
+  setPoopEnabled: (enabled: boolean): void => {
+    ipcRenderer.send('set-poop-enabled', enabled)
+  },
+  onPoopEnabledChanged: (callback: (enabled: boolean) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, enabled: boolean): void => callback(enabled)
+    ipcRenderer.on('poop-enabled-changed', handler)
+    return () => ipcRenderer.removeListener('poop-enabled-changed', handler)
+  },
+  getPoops: (): Promise<Poop[]> => {
+    return ipcRenderer.invoke('get-poops')
+  },
+  setPoops: (poops: Poop[]): void => {
+    ipcRenderer.send('set-poops', poops)
   },
   showContextMenu: (): void => {
     ipcRenderer.send('show-context-menu')

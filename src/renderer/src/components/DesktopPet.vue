@@ -37,7 +37,7 @@
     <!-- 小鱼 SVG；点击/拖拽/右键的命中区域只有鱼本体，透明 padding 一律穿透 -->
     <div
       class="fish-wrap"
-      :class="[effectiveMoodClass, { 'is-hovered': isHovered, 'is-rainbow': isRainbow, 'face-left': facingLeft }]"
+      :class="[effectiveMoodClass, { 'is-hovered': isHovered, 'is-rainbow': isRainbow, 'face-left': facingLeft, 'is-pooping': isPooping }]"
       @mousedown.left="startDrag"
       @contextmenu.prevent="onRightClick"
       @mouseenter="onFishHover"
@@ -128,6 +128,16 @@
     </div>
     </div>
 
+    <!-- 屎层：.playground 的平级子元素，坐标即视口坐标；点击铲屎 -->
+    <div
+      v-for="p in poops"
+      :key="p.id"
+      class="poop"
+      :style="{ left: p.x + 'px', top: p.y + 'px' }"
+      @mousedown.stop
+      @click.stop="scoopPoop(p.id)"
+    >💩</div>
+
     <!-- 设置弹窗（须在 transform 容器之外，fixed 定位才相对视口） -->
     <div v-if="showSettings" class="settings-overlay" @mousedown.stop>
       <div class="settings-panel">
@@ -166,6 +176,7 @@ import {
   stepWanderAngle,
   FISH_CONTAINER
 } from '../lib/fishMotion'
+import { nextPoopDelayMs, poopDropPosition, serializePoops, type Poop } from '../lib/poop'
 
 // ── 定时器调度 ────────────────────────────────────
 // 全部定时行为的唯一属主；句柄不离开模块，卸载时自动全部取消
@@ -214,7 +225,7 @@ function persistFishPosition() {
 // ── 动态点击穿透 ──────────────────────────────────
 // 默认全屏穿透；光标位于鱼本体/气泡/交互 UI 上时临时关闭。状态去重：只在变化时发 IPC。
 // 命中区域是可见元素而非 320×200 容器大框：透明 padding 一律穿透。
-const INTERACTIVE_SELECTOR = '.fish-wrap, .bubble-wrap, .settings-overlay'
+const INTERACTIVE_SELECTOR = '.fish-wrap, .bubble-wrap, .settings-overlay, .poop'
 let clickThrough = true
 
 function hitInteractiveAt(x: number, y: number): boolean {
@@ -294,6 +305,8 @@ function triggerScared() {
   const msgs = ['呀！！', '不要过来！', '救命！', '太快了！', '(ﾟДﾟ)！']
   showMsg(msgs[Math.floor(Math.random() * msgs.length)], 1500)
   spawnParticles(['！', '💦', '😱'], 3, 'scare')
+  // 受惊排泄：触发瞬间立刻拉一泡（边逃边拉），无冷却/动画/文案，与定时链完全独立；开关关闭时整个功能停用
+  if (poopEnabled.value) dropPoop()
   // 逃窜：优先于漫游，朝远离鼠标方向冲刺一次
   const dir = dashDirection(fishCenter(fishPos.value), hasMouseData ? mousePos.value : null)
   swimState.phase = 'dash'
@@ -371,6 +384,79 @@ function confirmWaterDrank() {
   showMsg('棒棒！多喝水 💪', 2500)
   spawnParticles(['💧', '✨', '💪', '⭐'], 5, 'rainbow')
   scheduleWaterReminder()
+}
+
+// ── 拉屎 ─────────────────────────────────────────
+// 定时排泄：PetScheduler 自调度链（15~30 分钟随机一泡），受惊排泄与其完全独立。
+// 屎无上限、不自动消失；每次增删即持久化，重启后原位恢复。
+const poops = ref<Poop[]>([])
+const poopEnabled = ref(true)
+const isPooping = ref(false)
+const POOP_ANIM_MS = 800 // 抖动使劲动画时长
+let poopSeq = 0
+
+const poopReliefMessages = ['舒服了', '别看', '……', '谁把灯打开']
+const scoopMessages = ['谢谢主人', '好人一生平安', '终于有人管了']
+
+function persistPoops() {
+  // 必须序列化为纯对象：poops.value 是 Vue 响应式代理，直接过 IPC 结构化克隆会同步抛异常
+  if (window.api) window.api.setPoops(serializePoops(poops.value))
+}
+
+/** 💩 落在鱼尾后方偏下（随朝向镜像），轻量收敛避免掉出屏幕 */
+function dropPoop() {
+  const pos = poopDropPosition(fishPos.value, facingLeft.value ? -1 : 1)
+  poops.value = [...poops.value, {
+    id: `${Date.now()}-${poopSeq++}`,
+    x: Math.min(Math.max(pos.x, 12), window.innerWidth - 12),
+    y: Math.min(Math.max(pos.y, 12), window.innerHeight - 12)
+  }]
+  persistPoops()
+}
+
+function schedulePoop() {
+  // 同名重挂：回调内再挂同名定时器，cancel('poop') 可终止整条链
+  scheduler.after('poop', nextPoopDelayMs(), onScheduledPoop)
+}
+
+function onScheduledPoop() {
+  if (isSleeping.value || isScared.value) {
+    // 梦游拉屎（或受惊中到点）：不唤醒、无动画，💩直接出现
+    dropPoop()
+  } else {
+    // 清醒：暂停漫游 → 抖动使劲 → 💩落下 → 漫游随 phaseLeftMs 耗尽自动恢复
+    isPooping.value = true
+    swimState.phase = 'pause'
+    swimState.vx = 0
+    swimState.vy = 0
+    swimState.phaseLeftMs = POOP_ANIM_MS
+    scheduler.after('poop-drop', POOP_ANIM_MS, () => {
+      dropPoop()
+      isPooping.value = false
+      showMsg(poopReliefMessages[Math.floor(Math.random() * poopReliefMessages.length)], 2000)
+    })
+  }
+  schedulePoop()
+}
+
+/** 开关变更：关闭即停调度（已拉出的屎保留可铲），开启重新调度 */
+function applyPoopEnabled(enabled: boolean) {
+  poopEnabled.value = enabled
+  if (enabled) {
+    schedulePoop()
+  } else {
+    scheduler.cancel('poop')
+    scheduler.cancel('poop-drop') // 中断进行到一半的使劲动画
+    isPooping.value = false
+  }
+}
+
+/** 铲屎：喷粒子 + 感谢文案 → 屎消失并落盘 */
+function scoopPoop(id: string) {
+  poops.value = poops.value.filter(p => p.id !== id)
+  persistPoops()
+  spawnParticles(['✨', '🧹', '💛', '⭐'], 4, 'rainbow')
+  showMsg(scoopMessages[Math.floor(Math.random() * scoopMessages.length)], 2000)
 }
 
 // ── 随机自言自语 ──────────────────────────────────
@@ -575,6 +661,11 @@ onMounted(async () => {
       // 全局点击暂无消费者，先留调试日志
       console.debug('[globalMouse] click', pos)
     }))
+
+    // 拉屎：恢复已拉出的屎；开关先拉一次，之后订阅主进程推送（托盘菜单切换）
+    poops.value = await window.api.getPoops()
+    applyPoopEnabled(await window.api.getPoopEnabled())
+    unsubscribeGlobal.push(window.api.onPoopEnabledChanged(applyPoopEnabled))
   }
 
   // 动态命中检测：穿透开启时 mousemove 由 forward 转发而来
@@ -873,6 +964,32 @@ async function saveSettings() {
   font-family: 'Microsoft YaHei', sans-serif;
 }
 @keyframes badge-pulse { from{transform:translateX(-50%) scale(1)} to{transform:translateX(-50%) scale(1.1)} }
+
+/* ── 拉屎 ── */
+/* 使劲动画：抖动 + 轻微下压，约 800ms 一次 */
+.fish-wrap.is-pooping .fish-svg {
+  animation: poop-push 0.8s ease-in-out !important;
+}
+@keyframes poop-push {
+  0%,100% { transform: translateY(0) scale(1); }
+  20%     { transform: translateY(2px) scale(1.04, 0.94) rotate(-2deg); }
+  40%     { transform: translateY(-2px) scale(0.98, 1.04) rotate(2deg); }
+  60%     { transform: translateY(3px) scale(1.06, 0.92); }
+  80%     { transform: translateY(-1px) scale(0.99, 1.02) rotate(-1deg); }
+}
+
+/* 屎：视口坐标绝对定位；padding 让点击热区略大于视觉尺寸 */
+.poop {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  padding: 8px;
+  cursor: pointer;
+  user-select: none;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.25));
+  transition: transform 0.15s ease;
+}
+.poop:hover { transform: translate(-50%, -50%) scale(1.15); }
 
 /* ── 设置弹窗 ── */
 .settings-overlay {

@@ -7,6 +7,7 @@ export interface MenuConfig {
   workEndTime: string
   autoLaunch: boolean
   globalMouseTracking: boolean
+  poopEnabled: boolean
 }
 
 export interface MenuDeps {
@@ -16,6 +17,8 @@ export interface MenuDeps {
   setConfig: (patch: Partial<MenuConfig>) => void
   /** 全局鼠标追踪开关变更后即时应用（start/stop 钩子） */
   applyGlobalMouseTracking: (enabled: boolean) => void
+  /** 拉屎开关变更后推送给 renderer（主→渲染 IPC） */
+  applyPoopEnabled: (enabled: boolean) => void
 }
 
 /**
@@ -33,7 +36,7 @@ export function createMenuModule(deps: MenuDeps) {
     })
   }
 
-  function buildMenu(opts: { showToggle?: boolean; showPin?: boolean; showMouseTracking?: boolean }): MenuItemConstructorOptions[] {
+  function buildMenu(opts: { showToggle?: boolean; showPin?: boolean; showMouseTracking?: boolean; showPoop?: boolean }): MenuItemConstructorOptions[] {
     const config = deps.getConfig()
     const mainWindow = deps.getWindow()
     const items: MenuItemConstructorOptions[] = [
@@ -86,6 +89,15 @@ export function createMenuModule(deps: MenuDeps) {
       })
     }
 
+    if (opts.showPoop) {
+      items.push({
+        label: '💩 拉屎',
+        type: 'checkbox',
+        checked: deps.getConfig().poopEnabled,
+        click: (item: MenuItem) => setPoopEnabled(item.checked)
+      })
+    }
+
     items.push(
       {
         label: '🚀 开机自启动',
@@ -105,7 +117,7 @@ export function createMenuModule(deps: MenuDeps) {
   function updateTrayMenu(): void {
     const tray = deps.getTray()
     if (!tray) return
-    tray.setContextMenu(Menu.buildFromTemplate(buildMenu({ showToggle: true, showMouseTracking: true })))
+    tray.setContextMenu(Menu.buildFromTemplate(buildMenu({ showToggle: true, showMouseTracking: true, showPoop: true })))
   }
 
   function popupContextMenu(): void {
@@ -126,5 +138,11 @@ export function createMenuModule(deps: MenuDeps) {
     updateTrayMenu()
   }
 
-  return { updateTrayMenu, popupContextMenu, setAutoLaunch, setGlobalMouseTracking }
+  function setPoopEnabled(enabled: boolean): void {
+    deps.setConfig({ poopEnabled: enabled })
+    deps.applyPoopEnabled(enabled)
+    updateTrayMenu()
+  }
+
+  return { updateTrayMenu, popupContextMenu, setAutoLaunch, setGlobalMouseTracking, setPoopEnabled }
 }

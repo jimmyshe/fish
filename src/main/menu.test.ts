@@ -27,9 +27,10 @@ vi.mock('@electron-toolkit/utils', () => ({
 type Template = Array<Record<string, unknown>>
 
 function makeDeps(configOverrides: Partial<MenuConfig> = {}) {
-  const config: MenuConfig = { workEndTime: '18:00', autoLaunch: false, globalMouseTracking: true, ...configOverrides }
+  const config: MenuConfig = { workEndTime: '18:00', autoLaunch: false, globalMouseTracking: true, poopEnabled: true, ...configOverrides }
   const setConfig = vi.fn()
   const applyGlobalMouseTracking = vi.fn()
+  const applyPoopEnabled = vi.fn()
   const tray = { setContextMenu: mocks.setContextMenu }
   const win = {
     webContents: { send: mocks.send },
@@ -44,9 +45,10 @@ function makeDeps(configOverrides: Partial<MenuConfig> = {}) {
     getWindow: () => win as never,
     getConfig: () => config,
     setConfig,
-    applyGlobalMouseTracking
+    applyGlobalMouseTracking,
+    applyPoopEnabled
   }
-  return { deps, config, setConfig, applyGlobalMouseTracking, tray, win }
+  return { deps, config, setConfig, applyGlobalMouseTracking, applyPoopEnabled, tray, win }
 }
 
 function lastTemplate(): Template {
@@ -150,5 +152,33 @@ describe('menu module', () => {
       .toBeLessThan(applyGlobalMouseTracking.mock.invocationCallOrder[0])
     expect(applyGlobalMouseTracking.mock.invocationCallOrder[0])
       .toBeLessThan(mocks.setContextMenu.mock.invocationCallOrder[1])
+  })
+
+  it('「拉屎」勾选：更新 → 推送 renderer → 刷新，顺序固定', () => {
+    const { deps, setConfig, applyPoopEnabled } = makeDeps({ poopEnabled: true })
+    const menu = createMenuModule(deps)
+    menu.updateTrayMenu()
+
+    const item = lastTemplate().find(i => i.label === '💩 拉屎')!
+    expect(item.type).toBe('checkbox')
+    expect(item.checked).toBe(true)
+    ;(item.click as (i: { checked: boolean }) => void)({ checked: false })
+
+    expect(setConfig).toHaveBeenCalledWith({ poopEnabled: false })
+    expect(applyPoopEnabled).toHaveBeenCalledWith(false)
+    expect(mocks.setContextMenu).toHaveBeenCalledTimes(2) // 初次构建 + 切换后刷新
+    expect(setConfig.mock.invocationCallOrder[0])
+      .toBeLessThan(applyPoopEnabled.mock.invocationCallOrder[0])
+    expect(applyPoopEnabled.mock.invocationCallOrder[0])
+      .toBeLessThan(mocks.setContextMenu.mock.invocationCallOrder[1])
+  })
+
+  it('右键菜单不含「拉屎」（开关只在托盘菜单）', () => {
+    const { deps } = makeDeps()
+    const menu = createMenuModule(deps)
+    menu.popupContextMenu()
+
+    const labels = lastTemplate().map(i => i.label)
+    expect(labels).not.toContain('💩 拉屎')
   })
 })
