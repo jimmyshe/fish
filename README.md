@@ -1,4 +1,4 @@
-# Fish Pet 🐟 `v1.5.0`
+# Fish Pet 🐟 `v1.5.1`
 
 一个基于 Electron + Vite + Vue 3 制作的趣味桌面摸鱼宠物。它会陪伴你度过忙碌的工作时光，实时显示下班倒计时，并在下班时刻准时提醒你"快跑"！
 
@@ -38,7 +38,7 @@
 - **框架**: [Electron 31](https://www.electronjs.org/) + [Vue 3](https://vuejs.org/)
 - **构建工具**: [electron-vite](https://electron-vite.org/)
 - **语言**: TypeScript
-- **测试**: Vitest（fake timers，65 个单元测试）
+- **测试**: Vitest（fake timers，69 个单元测试）
 - **打包**: electron-builder
 
 ---
@@ -51,6 +51,7 @@ src/
 │   ├── index.ts   # 游乐场窗口、托盘接线、IPC 注册
 │   ├── config.ts  # configStore：配置唯一属主（去抖持久化）
 │   ├── menu.ts    # 菜单模块：tray / 右键菜单 / 自启动序列
+│   ├── alwaysOnTop.ts # 置顶看门狗：周期性重新声明置顶，防被其他置顶窗口抢占
 │   └── globalMouse.ts # 全局鼠标钩子模块（uiohook-napi，30Hz 节流）
 ├── preload/       # 预加载脚本 (安全的 API 桥接)
 ├── shared/        # 跨进程共享类型 (Config / window.api 契约)
@@ -103,6 +104,9 @@ npm run dist
 3. **互动**：尝试点击、快速晃动鼠标或静置屏幕，探索更多动画细节。
 
 ## 📋 更新日志
+
+### v1.5.1
+- **修复置顶随机失效**：新增置顶看门狗（`alwaysOnTop` 模块），周期性重新声明置顶并把窗口抬回置顶层级顶部，防止被其他置顶窗口（任务管理器置顶模式、悬浮工具等）抢占后一直沉底；右键菜单手动关闭置顶时看门狗自动跳过
 
 ### v1.5.0
 - **全屏游乐场窗口**：320×200 小窗改为覆盖主屏的透明置顶游乐场窗口，鱼变为窗口内可拖拽的定位元素，活动范围扩展至全屏
