@@ -4,6 +4,7 @@ import { is } from '@electron-toolkit/utils'
 import { createMenuModule } from './menu'
 import { createConfigStore, type ConfigStore } from './config'
 import { startGlobalMouseTracking, stopGlobalMouseTracking } from './globalMouse'
+import { startAlwaysOnTopWatchdog } from './alwaysOnTop'
 import trayIconUrl from './tray-icon.png?inline'
 
 let configStore: ConfigStore
@@ -121,6 +122,9 @@ app.whenReady().then(() => {
 
   createWindow()
   createTray()
+
+  // 置顶看门狗：周期性把窗口抬回置顶层级顶部（Windows 置顶层级会被其他置顶窗口抢占）
+  startAlwaysOnTopWatchdog(() => mainWindow)
 
   // 按配置启动全局鼠标追踪（默认开启；Wayland 下静默降级）
   applyGlobalMouseTracking(configStore.get().globalMouseTracking)

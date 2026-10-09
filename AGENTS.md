@@ -22,7 +22,7 @@ src/
 - **Config persistence**: JSON stored in `app.getPath('userData')/config.json`; owned by the configStore module (`src/main/config.ts`, debounced writes, flushed on will-quit). The `Config` type and the `window.api` contract live in `src/shared/` as the single source for all three processes. `windowX/windowY` 语义为鱼元素在屏幕内的位置（不再是窗口位置）
 - **IPC**: Renderer uses `window.api` (exposed via preload); main process uses `ipcMain.handle/on`
 - **Auto-launch**: Only applies in production builds; silently skipped in dev mode (`is.dev`)
-- **Window**: 全屏游乐场窗口 —— frameless, transparent, always-on-top, non-resizable, `focusable: false`，覆盖整个主屏并固定于 (0,0)；默认 `setIgnoreMouseEvents(true, {forward: true})` 全屏穿透，renderer 经 `elementFromPoint` 命中检测 + `set-click-through` IPC 在光标位于鱼/UI 上时临时关闭穿透。鱼是窗口内的定位元素
+- **Window**: 全屏游乐场窗口 —— frameless, transparent, always-on-top, non-resizable, `focusable: false`，覆盖整个主屏并固定于 (0,0)；默认 `setIgnoreMouseEvents(true, {forward: true})` 全屏穿透，renderer 经 `elementFromPoint` 命中检测 + `set-click-through` IPC 在光标位于鱼/UI 上时临时关闭穿透。鱼是窗口内的定位元素。置顶由 `src/main/alwaysOnTop.ts` 看门狗周期性重新声明（Windows 置顶层级会被其他置顶窗口抢占）；用户右键菜单关闭置顶时看门狗自动跳过
 - **Global mouse tracking**: `src/main/globalMouse.ts`（uiohook-napi，mousemove 30Hz 节流推送，点击不节流）；config `globalMouseTracking` 开关（默认 true），托盘菜单可切换；Linux Wayland 下静默降级为窗口内追踪。electron-builder 需保持 `npmRebuild: false` + `asarUnpack` uiohook-napi
 
 ## CI / Release
