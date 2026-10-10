@@ -220,7 +220,7 @@ describe('auth module', () => {
     expect(authorizeUrl.searchParams.get('client_id')).toBe(CLIENT_ID)
     expect(authorizeUrl.searchParams.get('redirect_uri')).toBe('http://127.0.0.1:12344/callback')
     expect(authorizeUrl.searchParams.get('scope')).toBe('openid profile fish:play')
-    expect(authorizeUrl.searchParams.get('resource')).toBe('https://api.fishpet.ddoo.tech')
+    expect(authorizeUrl.searchParams.get('resource')).toBe('https://fishpet.ddoo.uk')
     expect(authorizeUrl.searchParams.get('code_challenge_method')).toBe('S256')
     expect(authorizeUrl.searchParams.get('code_challenge')).toBeTruthy()
 

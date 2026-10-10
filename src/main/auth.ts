@@ -7,7 +7,7 @@ import type { AuthState } from '../shared/api'
 /** OIDC 固定参数：模块内常量 + 环境变量可覆盖（CI 构建期注入见 ADR 0004） */
 const DEFAULT_ISSUER = process.env.POCKET_ID_ISSUER ?? 'https://pocketid.ddoo.tech'
 const DEFAULT_CLIENT_ID = process.env.FISH_OIDC_CLIENT_ID ?? '9ddf1299-7c61-4987-8d27-cdfdc04fcd49'
-const DEFAULT_RESOURCE = process.env.FISH_API_RESOURCE ?? 'https://api.fishpet.ddoo.tech'
+const DEFAULT_RESOURCE = process.env.FISH_API_RESOURCE ?? 'https://fishpet.ddoo.uk'
 /** loopback 回调固定端口（已在 PocketID 登记，端口占用则报错，不做回退） */
 const REDIRECT_URI = 'http://127.0.0.1:12344/callback'
 const CALLBACK_PORT = 12344
