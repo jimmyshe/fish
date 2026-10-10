@@ -302,6 +302,8 @@ const isScared = ref(false)
 function triggerScared() {
   if (isScared.value) return
   isScared.value = true
+  // 先注册恢复定时器再做副作用：气泡/粒子/拉屎任何一步抛异常，受惊状态都一定能恢复
+  scheduler.after('scared', 1800, () => { isScared.value = false })
   const msgs = ['呀！！', '不要过来！', '救命！', '太快了！', '(ﾟДﾟ)！']
   showMsg(msgs[Math.floor(Math.random() * msgs.length)], 1500)
   spawnParticles(['！', '💦', '😱'], 3, 'scare')
@@ -313,7 +315,6 @@ function triggerScared() {
   swimState.vx = dir.x * MOTION.DASH_SPEED
   swimState.vy = dir.y * MOTION.DASH_SPEED
   swimState.phaseLeftMs = MOTION.DASH_MS
-  scheduler.after('scared', 1800, () => { isScared.value = false })
 }
 
 // ── 睡眠模式 ──────────────────────────────────────
@@ -362,10 +363,11 @@ function addCombo() {
 function triggerRainbow() {
   if (isRainbow.value) return
   isRainbow.value = true
+  // 先注册恢复定时器再做副作用，与 triggerScared 同一原则
+  scheduler.after('rainbow', 5000, () => { isRainbow.value = false })
   const msgs = ['🌈 彩虹鱼出现了！！', '✨ 传说中的彩鱼！', '🎊 隐藏彩蛋解锁！']
   showMsg(msgs[Math.floor(Math.random() * msgs.length)], 4000)
   spawnParticles(['🌈', '✨', '🎉', '⭐', '💫'], 6, 'rainbow')
-  scheduler.after('rainbow', 5000, () => { isRainbow.value = false })
 }
 
 // ── 喝水提醒 ──────────────────────────────────────
@@ -431,8 +433,9 @@ function onScheduledPoop() {
     swimState.vy = 0
     swimState.phaseLeftMs = POOP_ANIM_MS
     scheduler.after('poop-drop', POOP_ANIM_MS, () => {
-      dropPoop()
+      // 先复位状态再做副作用：dropPoop 若抛异常，使劲动画状态不卡死
       isPooping.value = false
+      dropPoop()
       showMsg(poopReliefMessages[Math.floor(Math.random() * poopReliefMessages.length)], 2000)
     })
   }
