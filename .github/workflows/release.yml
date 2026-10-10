@@ -33,6 +33,11 @@ jobs:
       - name: Build and Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 构建期注入客户端所需的服务器信息（ADR 0004；非秘密，存 repo variables）
+          POCKET_ID_ISSUER: ${{ vars.POCKET_ID_ISSUER }}
+          FISH_OIDC_CLIENT_ID: ${{ vars.FISH_OIDC_CLIENT_ID }}
+          FISH_API_RESOURCE: ${{ vars.FISH_API_RESOURCE }}
+          FISH_API_BASE_URL: ${{ vars.FISH_API_BASE_URL }}
         run: |
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
             npm run dist -- --win --publish always
@@ -40,3 +45,28 @@ jobs:
             npm run dist -- --linux --publish always
           fi
         shell: bash
+
+  # server Docker 镜像 → GHCR（ADR 0004；手动部署）
+  server-image:
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push fish-server image
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/fish-server:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/fish-server:latest
