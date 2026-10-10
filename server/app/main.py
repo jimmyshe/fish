@@ -1,4 +1,6 @@
 from uuid import UUID
+import tomllib
+from pathlib import Path
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel
@@ -6,6 +8,13 @@ from pydantic import BaseModel
 from app import db
 from app.auth import AuthError, Identity, JwksClient, decode_token, fetch_username
 from app.config import Settings
+
+
+def _read_version() -> str:
+    """版本唯一来源：pyproject.toml 的 project.version（Docker 镜像里同样拷到项目根）"""
+    pyproject = Path(__file__).parent.parent / "pyproject.toml"
+    with pyproject.open("rb") as f:
+        return tomllib.load(f)["project"]["version"]
 
 
 class EventIn(BaseModel):
@@ -41,7 +50,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/health")
     def health():
-        return {"status": "ok"}
+        return {"status": "ok", "version": _read_version()}
 
     @app.post("/events", status_code=204)
     def post_event(body: EventIn, identity: Identity = Depends(current_identity)):

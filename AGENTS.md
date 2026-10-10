@@ -38,11 +38,12 @@ server/            # 铲屎计数后端（FastAPI + SQLite + uv，Python）
 
 ## CI / Release
 
-- CI triggers on git tags matching `v*` (e.g., `git tag v1.3.0 && git push --tags`)
+- CI triggers on git tags: 客户端 `v*`（如 `git tag v1.3.0 && git push --tags`），后端 `server-v*`（如 `git tag server-v1.0.0`）；两个 release job 经 `if: startsWith(github.ref, ...)` 互斥
 - Builds on Windows and Ubuntu; publishes to GitHub Releases automatically
 - Node.js version: 22
 - test.yml 两个并列 job：vitest（Node 22）+ server pytest（astral-sh/setup-uv，`cd server && uv run pytest`）
-- release.yml 两个 job：`release`（客户端打包，见下）+ `server-image`（docker/build-push-action 构建 `server/Dockerfile` 推 `ghcr.io/<repo-owner>/fish-server`，tag 为 git tag + `latest`，GITHUB_TOKEN + packages: write）
+- release.yml 两个 job：`release`（客户端打包，仅 v* tag）+ `server-image`（仅 server-v* tag；docker/build-push-action 构建 `server/Dockerfile` 推 `ghcr.io/<repo-owner>/fish-server`，tag 为去掉 `server-` 前缀的版本号 + `latest`；构建前校验 tag 版本与 `server/pyproject.toml` 的 version 一致，不一致即 fail）
+- server 版本号唯一来源：`server/pyproject.toml` 的 `version` 字段；`GET /health` 返回 `{"status":"ok","version":"..."}`（tomllib 读 pyproject.toml，Docker 镜像里同样拷到项目根）
 - 客户端构建期注入（ADR 0004）：四个值存 GitHub repo **variables**（非 secrets）——`POCKET_ID_ISSUER`、`FISH_OIDC_CLIENT_ID`、`FISH_API_RESOURCE`、`FISH_API_BASE_URL`；release job 经 `env:` 传入，electron.vite.config.ts 的 main `define` 在构建期烧进 bundle（未设置则 `??` 落回 auth.ts/apiClient.ts 硬编码默认值；dev 模式由本地环境变量覆盖）
 - server 镜像运行：必填 env `FISH_POCKETID_ISSUER` / `FISH_API_RESOURCE`（其余见 server/.env.example）；SQLite 落 `/app/data/fish.db`，挂卷持久化。部署示例见 `server/docker-compose.yml`（compose + .env + 挂卷，反代 HTTPS 到 8000 端口）
 
