@@ -138,7 +138,7 @@
       @click.stop="scoopPoop(p.id)"
     >💩</div>
 
-    <!-- 设置弹窗（须在 transform 容器之外，fixed 定位才相对视口） -->
+    <!-- 设置弹窗（须在 transform 容器之外，fixed 定位才相对视口）：只留下班时间 -->
     <div v-if="showSettings" class="settings-overlay" @mousedown.stop>
       <div class="settings-panel">
         <div class="settings-title">⏰ 设置下班时间</div>
@@ -225,7 +225,7 @@ function persistFishPosition() {
 // ── 动态点击穿透 ──────────────────────────────────
 // 默认全屏穿透；光标位于鱼本体/气泡/交互 UI 上时临时关闭。状态去重：只在变化时发 IPC。
 // 命中区域是可见元素而非 320×200 容器大框：透明 padding 一律穿透。
-const INTERACTIVE_SELECTOR = '.fish-wrap, .bubble-wrap, .settings-overlay, .poop'
+const INTERACTIVE_SELECTOR = '.fish-wrap, .bubble-wrap, .settings-panel, .poop'
 let clickThrough = true
 
 function hitInteractiveAt(x: number, y: number): boolean {
@@ -234,9 +234,9 @@ function hitInteractiveAt(x: number, y: number): boolean {
 }
 
 function updateClickThrough(hitInteractive: boolean) {
-  // 设置弹窗打开期间、拖拽进行期间保持不穿透
-  // （拖拽中光标会离开鱼身，此时开穿透会丢失 mouseup 导致拖拽卡死）
-  const desired = showSettings.value || isDragging.value ? false : !hitInteractive
+  // 拖拽进行期间保持不穿透（拖拽中光标会离开鱼身，此时开穿透会丢失 mouseup 导致拖拽卡死）；
+  // 面板打开不是强制条件：默认全屏穿透，纯命中检测驱动（设置面板开着也能点桌面其他应用）
+  const desired = isDragging.value ? false : !hitInteractive
   if (desired === clickThrough) return
   clickThrough = desired
   if (window.api) window.api.setClickThrough(desired)
@@ -246,13 +246,10 @@ function handleHitTest(e: MouseEvent) {
   updateClickThrough(hitInteractiveAt(e.clientX, e.clientY))
 }
 
-watch(showSettings, (open) => {
-  if (open) {
-    updateClickThrough(true) // 打开期间强制不穿透
-  } else {
-    // 关闭后按当前光标位置重新判定
-    updateClickThrough(hitInteractiveAt(lastMouseClientPos.x, lastMouseClientPos.y))
-  }
+watch(showSettings, () => {
+  // 设置弹窗开关后按当前光标位置主动做一次命中检测
+  // （解决「面板恰好在光标下打开」的边角：不常开强制不穿透）
+  updateClickThrough(hitInteractiveAt(lastMouseClientPos.x, lastMouseClientPos.y))
 })
 
 // ── 互动消息 ──────────────────────────────────────
@@ -454,10 +451,11 @@ function applyPoopEnabled(enabled: boolean) {
   }
 }
 
-/** 铲屎：喷粒子 + 感谢文案 → 屎消失并落盘 */
+/** 铲屎：喷粒子 + 感谢文案 → 屎消失并落盘；同时上报铲屎事件（未登录/失败由主进程静默丢弃） */
 function scoopPoop(id: string) {
   poops.value = poops.value.filter(p => p.id !== id)
   persistPoops()
+  if (window.api) window.api.reportScoop()
   spawnParticles(['✨', '🧹', '💛', '⭐'], 4, 'rainbow')
   showMsg(scoopMessages[Math.floor(Math.random() * scoopMessages.length)], 2000)
 }
@@ -501,7 +499,7 @@ const swimState = {
   vx: 0,
   vy: 0,
   angle: Math.random() * Math.PI * 2,
-  cruise: MOTION.CRUISE_MIN,
+  cruise: MOTION.CRUISE_MIN as number,
   phaseLeftMs: randRange(MOTION.SWIM_LEG_MIN_MS, MOTION.SWIM_LEG_MAX_MS)
 }
 const facingLeft = ref(false)

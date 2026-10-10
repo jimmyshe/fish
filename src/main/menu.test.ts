@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMenuModule, type MenuConfig } from './menu'
+import type { AuthState } from '../shared/api'
 
 const mocks = vi.hoisted(() => ({
   buildFromTemplate: vi.fn((template: unknown) => ({ template, popup: vi.fn() })),
@@ -26,11 +27,14 @@ vi.mock('@electron-toolkit/utils', () => ({
 
 type Template = Array<Record<string, unknown>>
 
-function makeDeps(configOverrides: Partial<MenuConfig> = {}) {
+function makeDeps(configOverrides: Partial<MenuConfig> = {}, authState: AuthState = { signedIn: false }) {
   const config: MenuConfig = { workEndTime: '18:00', autoLaunch: false, globalMouseTracking: true, poopEnabled: true, ...configOverrides }
   const setConfig = vi.fn()
   const applyGlobalMouseTracking = vi.fn()
   const applyPoopEnabled = vi.fn()
+  const login = vi.fn()
+  const logout = vi.fn()
+  const openNetworkPanel = vi.fn()
   const tray = { setContextMenu: mocks.setContextMenu }
   const win = {
     webContents: { send: mocks.send },
@@ -46,9 +50,13 @@ function makeDeps(configOverrides: Partial<MenuConfig> = {}) {
     getConfig: () => config,
     setConfig,
     applyGlobalMouseTracking,
-    applyPoopEnabled
+    applyPoopEnabled,
+    getAuthState: () => authState,
+    login,
+    logout,
+    openNetworkPanel
   }
-  return { deps, config, setConfig, applyGlobalMouseTracking, applyPoopEnabled, tray, win }
+  return { deps, config, setConfig, applyGlobalMouseTracking, applyPoopEnabled, login, logout, openNetworkPanel, tray, win }
 }
 
 function lastTemplate(): Template {
@@ -135,6 +143,19 @@ describe('menu module', () => {
     expect(mocks.send).toHaveBeenCalledWith('open-settings')
   })
 
+  it('「🏆 排行榜」菜单项调 openNetworkPanel（main 开独立窗口）', () => {
+    const { deps, openNetworkPanel } = makeDeps()
+    const menu = createMenuModule(deps)
+    menu.updateTrayMenu()
+
+    const item = lastTemplate().find(i => i.label === '🏆 排行榜')!
+    expect(item).toBeTruthy()
+    ;(item.click as () => void)()
+
+    expect(openNetworkPanel).toHaveBeenCalledTimes(1)
+    expect(mocks.send).not.toHaveBeenCalledWith('open-leaderboard')
+  })
+
   it('「全局鼠标追踪」勾选：更新 → 应用 → 刷新，顺序固定', () => {
     const { deps, setConfig, applyGlobalMouseTracking } = makeDeps({ globalMouseTracking: true })
     const menu = createMenuModule(deps)
@@ -180,5 +201,28 @@ describe('menu module', () => {
 
     const labels = lastTemplate().map(i => i.label)
     expect(labels).not.toContain('💩 拉屎')
+  })
+
+  it('未登录：菜单显示「登录」，点击调 login', () => {
+    const { deps, login } = makeDeps({}, { signedIn: false })
+    const menu = createMenuModule(deps)
+    menu.updateTrayMenu()
+
+    const item = lastTemplate().find(i => i.label === '🔑 登录')!
+    expect(item).toBeTruthy()
+    ;(item.click as () => void)()
+    expect(login).toHaveBeenCalledTimes(1)
+  })
+
+  it('已登录：菜单显示「退出登录（用户名）」，点击调 logout', () => {
+    const { deps, logout } = makeDeps({}, { signedIn: true, username: '小鱼干' })
+    const menu = createMenuModule(deps)
+    menu.updateTrayMenu()
+
+    const item = lastTemplate().find(i => i.label === '🚪 退出登录（小鱼干）')!
+    expect(item).toBeTruthy()
+    expect(lastTemplate().map(i => i.label)).not.toContain('🔑 登录')
+    ;(item.click as () => void)()
+    expect(logout).toHaveBeenCalledTimes(1)
   })
 })

@@ -1,15 +1,22 @@
-import { app, BrowserWindow, ipcMain, screen, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage, screen, shell, Tray, nativeImage } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { createMenuModule } from './menu'
 import { createConfigStore, type ConfigStore } from './config'
+import { createAuthModule, type AuthModule } from './auth'
+import { createReporter, type Reporter } from './reporter'
+import { createApiClient, type ApiClient } from './apiClient'
 import { startGlobalMouseTracking, stopGlobalMouseTracking } from './globalMouse'
 import { startAlwaysOnTopWatchdog } from './alwaysOnTop'
 import type { Poop } from '../shared/config'
 import trayIconUrl from './tray-icon.png?inline'
 
 let configStore: ConfigStore
+let auth: AuthModule
+let reporter: Reporter
+let apiClient: ApiClient
 let mainWindow: BrowserWindow | null = null
+let networkWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
 /** 按配置开关即时 start/stop 全局鼠标钩子 */
@@ -21,6 +28,32 @@ function applyGlobalMouseTracking(enabled: boolean): void {
   }
 }
 
+/** 联网窗口（排行榜）：独立普通小窗口，与游乐场窗口完全解耦；关闭即销毁，再开重建 */
+function openNetworkWindow(): void {
+  if (networkWindow) {
+    networkWindow.focus()
+    return
+  }
+  networkWindow = new BrowserWindow({
+    width: 380,
+    height: 560,
+    autoHideMenuBar: true,
+    resizable: false,
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true
+    }
+  })
+  networkWindow.on('closed', () => { networkWindow = null })
+
+  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+    networkWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/network.html`)
+  } else {
+    networkWindow.loadFile(join(__dirname, '../renderer/network.html'))
+  }
+}
+
 // 菜单模块：tray / 右键菜单 / 自启动序列的唯一属主
 const menu = createMenuModule({
   getTray: () => tray,
@@ -29,7 +62,12 @@ const menu = createMenuModule({
   setConfig: (patch) => { configStore.set(patch) },
   applyGlobalMouseTracking,
   // 拉屎开关：推送给 renderer 即时启停定时排泄调度
-  applyPoopEnabled: (enabled) => { mainWindow?.webContents.send('poop-enabled-changed', enabled) }
+  applyPoopEnabled: (enabled) => { mainWindow?.webContents.send('poop-enabled-changed', enabled) },
+  // auth 在 app 就绪后创建，菜单点击只发生在那之后
+  getAuthState: () => auth?.getState() ?? { signedIn: false },
+  login: () => { void auth?.login().catch((err) => console.warn('[auth] 登录失败', err)) },
+  logout: () => { void auth?.logout() },
+  openNetworkPanel: openNetworkWindow
 })
 
 function createWindow(): void {
@@ -133,16 +171,52 @@ ipcMain.on('show-context-menu', () => {
 
 ipcMain.on('quit', () => app.quit())
 
-app.whenReady().then(() => {
+// 登录链路：auth 模块为登录态唯一属主；失败经 Promise reject 传回 renderer
+ipcMain.handle('auth-login', () => auth.login())
+ipcMain.handle('auth-logout', () => auth.logout())
+ipcMain.handle('get-auth-state', () => auth.getState())
+
+// 铲屎事件上报：失败即丢弃（ADR 0003），reporter 内部不抛错
+ipcMain.on('report-scoop', () => { void reporter.reportScoop() })
+
+// 联网 API：未登录/失败一律返回 null（renderer 给占位态）
+ipcMain.handle('get-me', () => apiClient.getMe())
+ipcMain.handle('get-leaderboard', () => apiClient.getLeaderboard())
+ipcMain.handle('set-show-on-leaderboard', (_event, show: boolean) => apiClient.setShowOnLeaderboard(show))
+
+app.whenReady().then(async () => {
   // 配置模块在 app 就绪后创建（userData 路径此时才可用）
   configStore = createConfigStore({ configPath: join(app.getPath('userData'), 'config.json') })
   app.on('will-quit', () => configStore.flush())
+
+  // auth 模块：token 经 safeStorage 加密存 userData/auth.json（独立于明文 config.json）；
+  // 状态变更推送给 renderer 并刷新托盘菜单（「登录/退出登录」项切换）
+  auth = createAuthModule({
+    authPath: join(app.getPath('userData'), 'auth.json'),
+    safeStorage,
+    opener: (url) => { void shell.openExternal(url) }
+  })
+  auth.onStateChanged((authState) => {
+    // 广播给所有窗口（游乐场 + 联网窗口），各自订阅刷新
+    for (const win of BrowserWindow.getAllWindows()) {
+      win.webContents.send('auth-state-changed', authState)
+    }
+    menu.updateTrayMenu()
+  })
+
+  // 铲屎事件上报：token 由 auth 模块供给（过期自动续期），失败即丢弃
+  reporter = createReporter({ getAccessToken: () => auth.getAccessToken() })
+  // 联网 API（/me、/leaderboard、/me/preferences）：同一个 token 来源
+  apiClient = createApiClient({ getAccessToken: () => auth.getAccessToken() })
 
   // 同步开机自启动状态（防止手动改过注册表后不一致）
   menu.setAutoLaunch(configStore.get().autoLaunch)
 
   createWindow()
   createTray()
+
+  // 启动恢复持久化登录态：有 session 则 refresh 续期，失败静默退回未登录
+  await auth.load()
 
   // 置顶看门狗：周期性把窗口抬回置顶层级顶部（Windows 置顶层级会被其他置顶窗口抢占）
   startAlwaysOnTopWatchdog(() => mainWindow)

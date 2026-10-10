@@ -1,6 +1,7 @@
 import { app, Menu } from 'electron'
 import type { BrowserWindow, MenuItem, MenuItemConstructorOptions, Tray } from 'electron'
 import { is } from '@electron-toolkit/utils'
+import type { AuthState } from '../shared/api'
 
 /** 菜单模块依赖的最小配置形状（index.ts 的 Config 结构满足此接口） */
 export interface MenuConfig {
@@ -19,6 +20,14 @@ export interface MenuDeps {
   applyGlobalMouseTracking: (enabled: boolean) => void
   /** 拉屎开关变更后推送给 renderer（主→渲染 IPC） */
   applyPoopEnabled: (enabled: boolean) => void
+  /** 当前登录状态（auth 模块为属主），驱动「登录/退出登录」菜单项 */
+  getAuthState: () => AuthState
+  /** 点击「登录」：发起 PocketID 登录 */
+  login: () => void
+  /** 点击「退出登录」：纯本地退出 */
+  logout: () => void
+  /** 点击「🏆 排行榜」：打开（或聚焦）独立联网窗口 */
+  openNetworkPanel: () => void
 }
 
 /**
@@ -48,6 +57,10 @@ export function createMenuModule(deps: MenuDeps) {
       {
         label: '⏰ 设置下班时间',
         click: () => deps.getWindow()?.webContents.send('open-settings')
+      },
+      {
+        label: '🏆 排行榜',
+        click: () => deps.openNetworkPanel()
       }
     ]
 
@@ -97,6 +110,13 @@ export function createMenuModule(deps: MenuDeps) {
         click: (item: MenuItem) => setPoopEnabled(item.checked)
       })
     }
+
+    // 登录项随 auth 状态切换（auth 模块状态变更时由 index.ts 触发 updateTrayMenu 重建）
+    const authState = deps.getAuthState()
+    items.push(authState.signedIn
+      ? { label: `🚪 退出登录（${authState.username ?? '玩家'}）`, click: () => deps.logout() }
+      : { label: '🔑 登录', click: () => deps.login() }
+    )
 
     items.push(
       {

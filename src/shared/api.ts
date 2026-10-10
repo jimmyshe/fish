@@ -6,6 +6,32 @@ export interface ScreenPoint {
   y: number
 }
 
+/** 登录状态：主进程 auth 模块为唯一属主，renderer 经 IPC 拉取/订阅 */
+export interface AuthState {
+  signedIn: boolean
+  username?: string
+}
+
+/** GET /me 响应：我的铲屎计数、总榜名次（null = 未上榜）与上榜开关 */
+export interface MeResponse {
+  count: number
+  rank: number | null
+  showOnLeaderboard: boolean
+}
+
+/** 排行榜条目（总榜 Top 100） */
+export interface LeaderboardEntry {
+  rank: number
+  username: string
+  count: number
+}
+
+/** GET /leaderboard 响应：榜单 + 本人名次（opt-out 时本人不在 entries 里） */
+export interface LeaderboardResponse {
+  entries: LeaderboardEntry[]
+  me: { rank: number | null; count: number }
+}
+
 /** window.api 契约：唯一类型来源，preload 实现、renderer 消费 */
 export interface Api {
   getWorkEndTime: () => Promise<string>
@@ -31,6 +57,22 @@ export interface Api {
   showContextMenu: () => void
   quit: () => void
   onOpenSettings: (callback: () => void) => () => void
+  /** 发起 PocketID 登录（系统浏览器 + loopback 回调），失败 reject */
+  login: () => Promise<void>
+  /** 退出登录：纯本地清除，不调 PocketID end-session */
+  logout: () => Promise<void>
+  /** 读取当前登录状态 */
+  getAuthState: () => Promise<AuthState>
+  /** 订阅登录状态变化（主→渲染推送），返回取消订阅函数 */
+  onAuthStateChanged: (callback: (state: AuthState) => void) => () => void
+  /** 上报一次铲屎事件（fire-and-forget；是否登录、失败丢弃由主进程判断） */
+  reportScoop: () => void
+  /** 读取我的计数/名次/上榜开关；未登录或失败返回 null（UI 给占位态） */
+  getMe: () => Promise<MeResponse | null>
+  /** 读取排行榜（总榜 Top 100 + 本人名次）；未登录或失败返回 null */
+  getLeaderboard: () => Promise<LeaderboardResponse | null>
+  /** 设置上榜开关（opt-out 存服务器）；失败静默，调用方重新 getMe 取权威值 */
+  setShowOnLeaderboard: (show: boolean) => Promise<void>
   /** 订阅全局鼠标移动（主进程 30Hz 节流推送），返回取消订阅函数 */
   onGlobalMouseMove: (callback: (pos: ScreenPoint) => void) => () => void
   /** 订阅全局鼠标点击（不节流），返回取消订阅函数 */

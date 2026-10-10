@@ -1,7 +1,6 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Api } from '../shared/api'
-import type { ScreenPoint } from '../shared/api'
+import type { Api, AuthState, LeaderboardResponse, MeResponse, ScreenPoint } from '../shared/api'
 import type { Poop } from '../shared/config'
 
 const api: Api = {
@@ -50,6 +49,32 @@ const api: Api = {
     const handler = (): void => callback()
     ipcRenderer.on('open-settings', handler)
     return () => ipcRenderer.removeListener('open-settings', handler)
+  },
+  login: (): Promise<void> => {
+    return ipcRenderer.invoke('auth-login')
+  },
+  logout: (): Promise<void> => {
+    return ipcRenderer.invoke('auth-logout')
+  },
+  getAuthState: (): Promise<AuthState> => {
+    return ipcRenderer.invoke('get-auth-state')
+  },
+  onAuthStateChanged: (callback: (state: AuthState) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, state: AuthState): void => callback(state)
+    ipcRenderer.on('auth-state-changed', handler)
+    return () => ipcRenderer.removeListener('auth-state-changed', handler)
+  },
+  reportScoop: (): void => {
+    ipcRenderer.send('report-scoop')
+  },
+  getMe: (): Promise<MeResponse | null> => {
+    return ipcRenderer.invoke('get-me')
+  },
+  getLeaderboard: (): Promise<LeaderboardResponse | null> => {
+    return ipcRenderer.invoke('get-leaderboard')
+  },
+  setShowOnLeaderboard: (show: boolean): Promise<void> => {
+    return ipcRenderer.invoke('set-show-on-leaderboard', show)
   },
   onGlobalMouseMove: (callback: (pos: ScreenPoint) => void): (() => void) => {
     const handler = (_event: IpcRendererEvent, pos: ScreenPoint): void => callback(pos)
