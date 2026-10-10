@@ -1,4 +1,4 @@
-# Fish Pet 🐟 `v1.6.0`
+# Fish Pet 🐟 `v1.7.0`
 
 一个基于 Electron + Vite + Vue 3 制作的趣味桌面摸鱼宠物。它会陪伴你度过忙碌的工作时光，实时显示下班倒计时，并在下班时刻准时提醒你"快跑"！
 
@@ -14,6 +14,10 @@
 - **系统托盘**：支持最小化到托盘，右键菜单快速设置与退出，附带小鱼图标。
 - **全局鼠标追踪**：基于 uiohook-napi 的全局鼠标钩子（30Hz 节流），驱动鱼眼跟随与避鼠行为；可在托盘菜单开关。支持 Windows 与 Linux X11，Wayland 下自动降级为窗口内追踪。
 - **拉屎**：小鱼每 15~30 分钟随机拉一泡 💩（清醒时会停下使劲，睡着就梦游拉），受惊时也会被吓出屎；💩 会留在屏幕上直到你点击铲走，重启不消失；托盘菜单可开关。
+
+### 🌐 联网玩法（可选）
+- **PocketID 登录**：passkey 免密码登录（系统浏览器完成，token 加密存储）；不登录完全不影响单机玩法。
+- **铲屎排行榜**：铲的每泡屎实时累计到云端，托盘菜单「🏆 排行榜」打开独立窗口查看总榜 Top 100 与自己的名次；可随时选择不上榜。
 
 ### 🐟 智能心情系统
 小鱼会根据剩余工作时间变换状态：
@@ -39,8 +43,9 @@
 - **框架**: [Electron 31](https://www.electronjs.org/) + [Vue 3](https://vuejs.org/)
 - **构建工具**: [electron-vite](https://electron-vite.org/)
 - **语言**: TypeScript
-- **测试**: Vitest（fake timers，82 个单元测试）
+- **测试**: Vitest（107 个单元测试）+ pytest（后端 15 个）
 - **打包**: electron-builder
+- **后端**: FastAPI + SQLite（`server/`，PocketID OIDC 验签，独立版本演进）
 
 ---
 
@@ -53,14 +58,18 @@ src/
 │   ├── config.ts  # configStore：配置唯一属主（去抖持久化）
 │   ├── menu.ts    # 菜单模块：tray / 右键菜单 / 自启动序列
 │   ├── alwaysOnTop.ts # 置顶看门狗：周期性重新声明置顶，防被其他置顶窗口抢占
+│   ├── auth.ts    # 登录模块：PocketID OIDC（PKCE + loopback 回调），safeStorage 加密存 token
+│   ├── apiClient.ts # 联网 API 客户端：/me、/leaderboard、opt-out
+│   ├── reporter.ts # 铲屎事件上报（幂等 UUID，失败即丢弃）
 │   └── globalMouse.ts # 全局鼠标钩子模块（uiohook-napi，30Hz 节流）
 ├── preload/       # 预加载脚本 (安全的 API 桥接)
 ├── shared/        # 跨进程共享类型 (Config / window.api 契约)
-└── renderer/      # Vue 渲染进程
+└── renderer/      # Vue 渲染进程（多页：index 游乐场 + network 排行榜窗口）
     └── src/
         ├── App.vue
         ├── components/
-        │   └── DesktopPet.vue   # 宠物状态组合与模板
+        │   ├── DesktopPet.vue   # 宠物状态组合与模板
+        │   └── NetworkPanel.vue # 排行榜窗口根组件
         ├── composables/
         │   ├── PetScheduler.ts  # 定时器调度模块（after/every/cancel）
         │   ├── usePetScheduler.ts
@@ -70,6 +79,7 @@ src/
             ├── fishPosition.ts  # 鱼位置纯逻辑（初始落点、屏幕收敛）
             ├── fishMotion.ts    # 运动模块：漫游/避鼠/逃窜转向力（MOTION 参数）
             └── poop.ts          # 排泄模块：拉屎间隔、落点与序列化（POOP 参数）
+server/            # 铲屎计数后端（FastAPI + SQLite，Docker 部署，独立 server-v* 版本）
 ```
 
 ---
@@ -106,6 +116,11 @@ npm run dist
 3. **互动**：尝试点击、快速晃动鼠标或静置屏幕，探索更多动画细节。
 
 ## 📋 更新日志
+
+### v1.7.0
+- **联网玩法上线**：PocketID passkey 登录（公共客户端 PKCE + loopback 回调，token 经 safeStorage 加密保存，登录可选不影响单机）；铲屎事件实时上报云端（UUID 幂等、失败即丢弃）；托盘菜单「🏆 排行榜」打开独立窗口看总榜 Top 100 与本人名次，支持 opt-out 退榜
+- **配套后端**：`server/` 目录新增铲屎计数后端（FastAPI + SQLite，JWKS 验签、限流、lazy 建档），Docker 镜像经 CI 推 GHCR，独立 `server-v*` 版本号演进
+- **修复**：联网面板穿透问题改为独立窗口架构根治（浮层方案的全屏不穿透与事件吞没问题一并消除）
 
 ### v1.6.0
 - **鱼拉屎**：定时排泄（15~30 分钟随机一泡，清醒时暂停漫游抖动使劲+随机文案，睡眠/受惊中直接落屎）与受惊排泄（受惊瞬间边逃边拉、无冷却）两个独立触发源；💩 无上限常驻屏幕，点击铲屎（粒子+感谢文案），持久化到 config 重启原位恢复；`poopEnabled` 开关默认开启，托盘菜单切换并即时推送 renderer 生效
