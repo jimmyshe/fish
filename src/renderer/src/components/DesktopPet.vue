@@ -6,8 +6,8 @@
       :style="fishStyle"
     >
 
-    <!-- 对话气泡 -->
-    <div class="bubble-wrap" :class="{ 'sleeping-bubble': isSleeping && !showWaterReminder }">
+    <!-- 对话气泡；下班提示关闭时不再常驻，只在互动消息 / 睡眠 / 喝水提醒时出现 -->
+    <div v-if="showBubble" class="bubble-wrap" :class="{ 'sleeping-bubble': isSleeping && !showWaterReminder }">
       <div class="speech-bubble" :class="[effectiveMoodClass, { 'water-alert': showWaterReminder }]">
         <template v-if="showWaterReminder">
           <div class="bubble-text water-pulse">💧 该喝水啦！</div>
@@ -138,16 +138,20 @@
       @click.stop="scoopPoop(p.id)"
     >💩</div>
 
-    <!-- 设置弹窗（须在 transform 容器之外，fixed 定位才相对视口）：只留下班时间 -->
+    <!-- 设置弹窗（须在 transform 容器之外，fixed 定位才相对视口）：下班时间 + 下班提示开关，草稿式保存 -->
     <div v-if="showSettings" class="settings-overlay" @mousedown.stop>
       <div class="settings-panel">
-        <div class="settings-title">⏰ 设置下班时间</div>
+        <div class="settings-title">⏰ 下班设置</div>
         <input
           v-model="tempTime"
           type="time"
           class="time-input"
           @keydown.enter="saveSettings"
         />
+        <label class="reminder-toggle">
+          <input v-model="tempReminderEnabled" type="checkbox" />
+          下班提示
+        </label>
         <div class="settings-buttons">
           <button class="btn-cancel" @click="showSettings = false">取消</button>
           <button class="btn-save" @click="saveSettings">保存</button>
@@ -184,9 +188,11 @@ const scheduler = usePetScheduler()
 
 // ── 基础状态 ──────────────────────────────────────
 const workEndTime = ref('18:00')
+const workEndReminderEnabled = ref(true)
 const currentTime = ref(new Date())
 const showSettings = ref(false)
 const tempTime = ref('18:00')
+const tempReminderEnabled = ref(true)
 
 const MS_PER_SECOND = 1000
 const MS_PER_MINUTE = 60 * MS_PER_SECOND
@@ -623,17 +629,23 @@ const eyeY = computed(() => 35 + eyeOffset.value.y)
 const eyeHighlightX = computed(() => eyeX.value + 1)
 const eyeHighlightY = computed(() => eyeY.value - 2)
 
-// 气泡显示内容
+// 气泡显示内容：下班提示关闭时不报时（心情/特效仍随时间变化）
 const displayMessage = computed(() => {
   if (isSleeping.value) return 'Z z z ...'
-  return interactMessage.value || timeInfo.value.message
+  if (interactMessage.value) return interactMessage.value
+  return workEndReminderEnabled.value ? timeInfo.value.message : ''
 })
 
 const displaySubMessage = computed(() => {
   if (isSleeping.value) return '（睡着了，别吵我）'
-  if (interactMessage.value) return ''
+  if (interactMessage.value || !workEndReminderEnabled.value) return ''
   return timeInfo.value.subMessage
 })
+
+// 气泡可见性：下班提示开启时常驻报时；关闭后只在互动消息 / 睡眠 / 喝水提醒时出现
+const showBubble = computed(() =>
+  showWaterReminder.value || isSleeping.value || !!interactMessage.value || workEndReminderEnabled.value
+)
 
 // ── 生命周期 ──────────────────────────────────────
 const unsubscribeGlobal: Array<() => void> = []
@@ -641,9 +653,12 @@ const unsubscribeGlobal: Array<() => void> = []
 onMounted(async () => {
   if (window.api) {
     workEndTime.value = await window.api.getWorkEndTime()
+    workEndReminderEnabled.value = await window.api.getWorkEndReminderEnabled()
     tempTime.value = workEndTime.value
     window.api.onOpenSettings(() => {
+      // 打开时同步草稿：取消丢弃的改动不会残留到下次打开
       tempTime.value = workEndTime.value
+      tempReminderEnabled.value = workEndReminderEnabled.value
       showSettings.value = true
     })
 
@@ -746,10 +761,13 @@ async function saveSettings() {
   if (!tempTime.value) return
   if (window.api) {
     // 以主进程返回的已保存配置为准，避免本地先写、异步失败导致分叉
-    const config = await window.api.setWorkEndTime(tempTime.value)
+    await window.api.setWorkEndTime(tempTime.value)
+    const config = await window.api.setWorkEndReminderEnabled(tempReminderEnabled.value)
     workEndTime.value = config.workEndTime
+    workEndReminderEnabled.value = config.workEndReminderEnabled
   } else {
     workEndTime.value = tempTime.value
+    workEndReminderEnabled.value = tempReminderEnabled.value
   }
   showSettings.value = false
 }
@@ -1016,6 +1034,12 @@ async function saveSettings() {
   outline: none; color: #2d3436; margin-bottom: 14px;
 }
 .time-input:focus { border-color: #0984e3; }
+.reminder-toggle {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: #2d3436; margin-bottom: 14px;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  cursor: pointer; user-select: none;
+}
 .settings-buttons { display: flex; gap: 10px; justify-content: flex-end; }
 .btn-cancel, .btn-save {
   padding: 6px 16px; border-radius: 8px; border: none;

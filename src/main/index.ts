@@ -171,6 +171,15 @@ ipcMain.handle('set-work-end-time', (_event, time: string) => {
   return updated
 })
 
+// 下班提示开关：入口只在 renderer 设置弹窗，invoke 型，无托盘项、无主→渲染推送
+ipcMain.handle('get-work-end-reminder-enabled', () => {
+  return configStore.get().workEndReminderEnabled
+})
+
+ipcMain.handle('set-work-end-reminder-enabled', (_event, enabled: boolean) => {
+  return configStore.set({ workEndReminderEnabled: enabled })
+})
+
 ipcMain.on('show-context-menu', () => {
   menu.popupContextMenu()
 })

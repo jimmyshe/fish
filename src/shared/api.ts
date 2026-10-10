@@ -36,6 +36,10 @@ export interface LeaderboardResponse {
 export interface Api {
   getWorkEndTime: () => Promise<string>
   setWorkEndTime: (time: string) => Promise<Config>
+  /** 读取下班提示开关 */
+  getWorkEndReminderEnabled: () => Promise<boolean>
+  /** 开关下班提示（返回更新后的完整配置，以主进程为准） */
+  setWorkEndReminderEnabled: (enabled: boolean) => Promise<Config>
   /** 读取鱼元素在屏幕内的持久化位置（负值表示未设置） */
   getFishPosition: () => Promise<ScreenPoint>
   /** 持久化鱼元素位置（拖拽 / 漂移结束时调用） */

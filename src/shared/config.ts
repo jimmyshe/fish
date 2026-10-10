@@ -8,6 +8,8 @@ export interface Poop {
 /** 应用配置：唯一类型来源，main / preload / renderer 共用 */
 export interface Config {
   workEndTime: string
+  /** 下班提示开关；关闭时气泡不报时（心情/特效仍随下班时间变化），气泡只在互动/睡眠/喝水提醒时出现 */
+  workEndReminderEnabled: boolean
   /** 鱼元素在屏幕内的位置（游乐场窗口内坐标），负值表示未设置 */
   windowX: number
   windowY: number
@@ -22,6 +24,7 @@ export interface Config {
 
 export const DEFAULT_CONFIG: Config = {
   workEndTime: '18:00',
+  workEndReminderEnabled: true,
   windowX: -1,
   windowY: -1,
   autoLaunch: false,

@@ -10,6 +10,12 @@ const api: Api = {
   setWorkEndTime: (time: string) => {
     return ipcRenderer.invoke('set-work-end-time', time)
   },
+  getWorkEndReminderEnabled: (): Promise<boolean> => {
+    return ipcRenderer.invoke('get-work-end-reminder-enabled')
+  },
+  setWorkEndReminderEnabled: (enabled: boolean) => {
+    return ipcRenderer.invoke('set-work-end-reminder-enabled', enabled)
+  },
   getFishPosition: (): Promise<ScreenPoint> => {
     return ipcRenderer.invoke('get-fish-position')
   },
