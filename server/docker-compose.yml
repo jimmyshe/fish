@@ -1,0 +1,15 @@
+# 部署示例：fish-server 铲屎计数后端
+# 用法：把本文件和 .env（照 .env.example 填）放在同一目录，docker compose up -d
+services:
+  fish-server:
+    image: ghcr.io/jimmyshe/fish-server:latest
+    # build: . # 不走 GHCR、本地构建时改用这行（与 image 二选一）
+    restart: unless-stopped
+    ports:
+      - "8000:8000" # 前面反代 HTTPS（api.fishpet.ddoo.tech）到此端口
+    env_file: .env # 必填 FISH_POCKETID_ISSUER / FISH_API_RESOURCE，见 .env.example
+    volumes:
+      - fish-data:/app/data # SQLite 持久化（FISH_DB_PATH=/app/data/fish.db）
+
+volumes:
+  fish-data:

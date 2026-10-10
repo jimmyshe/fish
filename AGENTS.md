@@ -44,7 +44,7 @@ server/            # 铲屎计数后端（FastAPI + SQLite + uv，Python）
 - test.yml 两个并列 job：vitest（Node 22）+ server pytest（astral-sh/setup-uv，`cd server && uv run pytest`）
 - release.yml 两个 job：`release`（客户端打包，见下）+ `server-image`（docker/build-push-action 构建 `server/Dockerfile` 推 `ghcr.io/<repo-owner>/fish-server`，tag 为 git tag + `latest`，GITHUB_TOKEN + packages: write）
 - 客户端构建期注入（ADR 0004）：四个值存 GitHub repo **variables**（非 secrets）——`POCKET_ID_ISSUER`、`FISH_OIDC_CLIENT_ID`、`FISH_API_RESOURCE`、`FISH_API_BASE_URL`；release job 经 `env:` 传入，electron.vite.config.ts 的 main `define` 在构建期烧进 bundle（未设置则 `??` 落回 auth.ts/apiClient.ts 硬编码默认值；dev 模式由本地环境变量覆盖）
-- server 镜像运行：必填 env `FISH_POCKETID_ISSUER` / `FISH_API_RESOURCE`（其余见 server/.env.example）；SQLite 落 `/app/data/fish.db`，挂卷持久化（`-v fish-data:/app/data`）
+- server 镜像运行：必填 env `FISH_POCKETID_ISSUER` / `FISH_API_RESOURCE`（其余见 server/.env.example）；SQLite 落 `/app/data/fish.db`，挂卷持久化。部署示例见 `server/docker-compose.yml`（compose + .env + 挂卷，反代 HTTPS 到 8000 端口）
 
 ## Testing
 
