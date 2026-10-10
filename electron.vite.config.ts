@@ -9,7 +9,8 @@ import vue from '@vitejs/plugin-vue'
  */
 function envDefine(name: string): string {
   const value = process.env[name]
-  return value === undefined ? 'undefined' : JSON.stringify(value)
+  // GitHub variables 未设置时 ${{ vars.X }} 求值为空字符串而非 undefined，空串同样视为未设置
+  return value === undefined || value === '' ? 'undefined' : JSON.stringify(value)
 }
 
 export default defineConfig({

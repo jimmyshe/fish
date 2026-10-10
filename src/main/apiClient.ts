@@ -4,7 +4,7 @@ import type { LeaderboardResponse, MeResponse } from '../shared/api'
  *  Bearer 来自 auth.getAccessToken()；未登录或任何失败一律返回 null（静默，UI 给占位态）。 */
 
 /** API 固定参数：模块内常量 + 环境变量可覆盖（CI 构建期注入见 ADR 0004）；reporter 共用 */
-export const DEFAULT_API_BASE_URL = process.env.FISH_API_BASE_URL ?? 'https://fishpet.ddoo.uk'
+export const DEFAULT_API_BASE_URL = process.env.FISH_API_BASE_URL || 'https://fishpet.ddoo.uk'
 
 export interface ApiClientDeps {
   /** 取当前可用 access token（auth 模块）；未登录/暂时不可用返回 null */

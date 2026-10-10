@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, screen, shell, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, shell, Tray, nativeImage } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { createMenuModule } from './menu'
@@ -65,7 +65,13 @@ const menu = createMenuModule({
   applyPoopEnabled: (enabled) => { mainWindow?.webContents.send('poop-enabled-changed', enabled) },
   // auth 在 app 就绪后创建，菜单点击只发生在那之后
   getAuthState: () => auth?.getState() ?? { signedIn: false },
-  login: () => { void auth?.login().catch((err) => console.warn('[auth] 登录失败', err)) },
+  login: () => {
+    // 打包版看不到 console，登录失败必须让用户可见
+    void auth?.login().catch((err) => {
+      console.warn('[auth] 登录失败', err)
+      dialog.showErrorBox('登录失败', err instanceof Error ? err.message : String(err))
+    })
+  },
   logout: () => { void auth?.logout() },
   openNetworkPanel: openNetworkWindow
 })
