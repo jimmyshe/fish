@@ -37,7 +37,7 @@ export default defineConfig({
       rollupOptions: {
         input: {
           index: resolve('src/renderer/index.html'),
-          network: resolve('src/renderer/network.html')
+          panel: resolve('src/renderer/panel.html')
         }
       }
     },

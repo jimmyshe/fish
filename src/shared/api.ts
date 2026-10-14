@@ -1,10 +1,13 @@
 import type { Config, Poop } from './config'
 
-/** 屏幕坐标点（游乐场窗口覆盖主屏且位于 (0,0)，client 坐标即屏幕坐标） */
+/** 屏幕坐标点（游乐场窗口覆盖整个主屏且位于 (0,0)，client 坐标即屏幕坐标） */
 export interface ScreenPoint {
   x: number
   y: number
 }
+
+/** 主面板 tab：托盘菜单深链与 panel-switch-tab 推送共用的载荷类型 */
+export type MainPanelTab = 'settings' | 'leaderboard'
 
 /** 登录状态：主进程 auth 模块为唯一属主，renderer 经 IPC 拉取/订阅 */
 export interface AuthState {
@@ -34,12 +37,14 @@ export interface LeaderboardResponse {
 
 /** window.api 契约：唯一类型来源，preload 实现、renderer 消费 */
 export interface Api {
-  getWorkEndTime: () => Promise<string>
-  setWorkEndTime: (time: string) => Promise<Config>
-  /** 读取下班提示开关 */
-  getWorkEndReminderEnabled: () => Promise<boolean>
-  /** 开关下班提示（返回更新后的完整配置，以主进程为准） */
-  setWorkEndReminderEnabled: (enabled: boolean) => Promise<Config>
+  /** 读取完整配置（挂载时先拉一次，之后订阅 onConfigChanged） */
+  getConfig: () => Promise<Config>
+  /** 订阅配置变化：configStore.set 后广播完整 Config 给所有窗口，返回取消订阅函数 */
+  onConfigChanged: (callback: (config: Config) => void) => () => void
+  /** 设置下班时间（即时生效；同步回执走 config-changed 广播） */
+  setWorkEndTime: (time: string) => Promise<void>
+  /** 开关下班提示（即时生效；同步回执走 config-changed 广播） */
+  setWorkEndReminderEnabled: (enabled: boolean) => Promise<void>
   /** 读取鱼元素在屏幕内的持久化位置（负值表示未设置） */
   getFishPosition: () => Promise<ScreenPoint>
   /** 持久化鱼元素位置（拖拽 / 漂移结束时调用） */
@@ -48,19 +53,21 @@ export interface Api {
   setClickThrough: (ignore: boolean) => void
   /** 开关全局鼠标追踪（主进程即时 start/stop 钩子） */
   setGlobalMouseTracking: (enabled: boolean) => void
-  /** 读取拉屎开关 */
-  getPoopEnabled: () => Promise<boolean>
-  /** 开关拉屎（renderer 侧调用；托盘菜单切换则经 onPoopEnabledChanged 推送回来） */
+  /** 开关拉屎（即时生效；同步回执走 config-changed 广播） */
   setPoopEnabled: (enabled: boolean) => void
-  /** 订阅拉屎开关变化（主→渲染推送），返回取消订阅函数 */
-  onPoopEnabledChanged: (callback: (enabled: boolean) => void) => () => void
+  /** 开关开机自启动（主进程即时 setLoginItemSettings，仅生产包生效） */
+  setAutoLaunch: (enabled: boolean) => void
+  /** 读取游乐场窗口置顶状态（不持久化，默认开启） */
+  getAlwaysOnTop: () => Promise<boolean>
+  /** 开关游乐场窗口置顶；用户关闭时置顶看门狗自动跳过 */
+  setAlwaysOnTop: (enabled: boolean) => void
   /** 读取已拉出的屎列表（重启恢复用） */
   getPoops: () => Promise<Poop[]>
   /** 持久化屎列表（每次增删即调用） */
   setPoops: (poops: Poop[]) => void
-  showContextMenu: () => void
   quit: () => void
-  onOpenSettings: (callback: () => void) => () => void
+  /** 主面板已打开时切换 tab（托盘菜单再次点击入口项），返回取消订阅函数 */
+  onSwitchPanelTab: (callback: (tab: MainPanelTab) => void) => () => void
   /** 发起 PocketID 登录（系统浏览器 + loopback 回调），失败 reject */
   login: () => Promise<void>
   /** 退出登录：纯本地清除，不调 PocketID end-session */

@@ -1,10 +1,6 @@
 <template>
-  <!-- 联网面板：独立 BrowserWindow 的页面根内容（不再是游乐场窗口浮层；
-       窗口拖动/关闭由 OS 负责，无需命中检测与拖拽接线） -->
-  <div class="network-panel">
-    <div class="panel-title">🏆 铲屎排行榜</div>
-    <button class="panel-close" @click="closeWindow">✕</button>
-
+  <!-- 排行榜 tab：登录 + 联网数据的唯一 UI 归属（主面板窗口内，窗口拖动/关闭由 OS 负责） -->
+  <div class="leaderboard-tab">
     <template v-if="authState.signedIn">
       <div class="auth-status">🐟 已登录：{{ authState.username }}</div>
       <!-- 我的计数/名次：失败或加载中给占位，不弹窗 -->
@@ -33,14 +29,14 @@
           <span class="lb-count">{{ e.count }}</span>
         </div>
       </div>
-      <button class="btn-save auth-btn" :disabled="refreshing" @click="onRefresh">
+      <button class="btn-save btn-block" :disabled="refreshing" @click="onRefresh">
         {{ refreshing ? '刷新中…' : '🔄 刷新' }}
       </button>
-      <button class="btn-cancel auth-btn" @click="onLogout">退出登录</button>
+      <button class="btn-cancel btn-block" @click="onLogout">退出登录</button>
     </template>
     <template v-else>
       <div class="auth-status">登录后参与铲屎排行榜</div>
-      <button class="btn-save auth-btn" :disabled="authBusy" @click="onLogin">
+      <button class="btn-save btn-block" :disabled="authBusy" @click="onLogin">
         {{ authBusy ? '等待浏览器登录…' : '🔑 登录 PocketID' }}
       </button>
     </template>
@@ -57,14 +53,10 @@ import { usePetScheduler } from '../composables/usePetScheduler'
 const scheduler = usePetScheduler()
 
 // ── 登录 ─────────────────────────────────────────
-// auth 状态属主在主进程；这里先拉一次再订阅推送（同 onPoopEnabledChanged 先例）
+// auth 状态属主在主进程；这里先拉一次再订阅推送（同 onConfigChanged 先例）
 const authState = ref<AuthState>({ signedIn: false })
 const authBusy = ref(false)
 const authError = ref('')
-
-function closeWindow(): void {
-  window.close()
-}
 
 async function onLogin() {
   if (!window.api || authBusy.value) return
@@ -111,7 +103,7 @@ async function onRefresh() {
   }
 }
 
-// 窗口打开（组件挂载）且已登录：立即拉一次 + 之后每 5 分钟；登出即停并清空
+// 面板打开（组件挂载）且已登录：立即拉一次 + 之后每 5 分钟；登出即停并清空
 watch(() => authState.value.signedIn, (signedIn) => {
   scheduler.cancel('leaderboard-poll')
   if (signedIn) {
@@ -145,23 +137,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* ── 联网面板（独立窗口页面） ── */
-.network-panel {
-  padding: 20px 24px;
-  min-height: 100vh;
-  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
-}
-.panel-title {
-  font-size: 14px; font-weight: 700; color: #2d3436;
-  margin-bottom: 14px; text-align: center;
-}
-.panel-close {
-  position: absolute; top: 10px; right: 12px;
-  border: none; background: none; cursor: pointer;
-  font-size: 13px; color: #b2bec3; padding: 4px;
-}
-.panel-close:hover { color: #636e72; }
-
 .auth-status {
   font-size: 12px; color: #636e72; margin-bottom: 8px; text-align: center;
 }
@@ -187,19 +162,6 @@ onUnmounted(() => {
 .lb-row.lb-me .lb-rank { color: #0984e3; }
 .lb-name { flex: 1; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lb-count { font-weight: 600; }
-
-.btn-cancel, .btn-save {
-  padding: 6px 16px; border-radius: 8px; border: none;
-  cursor: pointer; font-size: 13px;
-  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
-  transition: opacity 0.2s;
-}
-.btn-cancel { background: #dfe6e9; color: #636e72; }
-.btn-save   { background: #74b9ff; color: white; font-weight: 600; }
-.btn-cancel:hover, .btn-save:hover { opacity: 0.85; }
-.auth-btn { width: 100%; padding: 7px 0; }
-.auth-btn + .auth-btn { margin-top: 8px; }
-.auth-btn:disabled { opacity: 0.6; cursor: default; }
 .auth-error {
   margin-top: 8px; font-size: 11px; color: #d63031; text-align: center;
 }

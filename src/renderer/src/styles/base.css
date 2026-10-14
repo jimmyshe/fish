@@ -1,0 +1,40 @@
+/* 主面板共享样式：字体栈、按钮、表单行、配色（灰阶 + #74b9ff/#0984e3） */
+body {
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  color: #2d3436;
+}
+
+.btn-cancel,
+.btn-save {
+  padding: 6px 16px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-family: inherit;
+  transition: opacity 0.2s;
+}
+.btn-cancel { background: #dfe6e9; color: #636e72; }
+.btn-save { background: #74b9ff; color: white; font-weight: 600; }
+.btn-cancel:hover,
+.btn-save:hover { opacity: 0.85; }
+.btn-cancel:disabled,
+.btn-save:disabled { opacity: 0.6; cursor: default; }
+
+/* 整宽操作按钮（登录 / 刷新等） */
+.btn-block { width: 100%; padding: 7px 0; }
+.btn-block + .btn-block { margin-top: 8px; }
+
+/* 设置项行：标签 + 控件 */
+.form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid #eef1f5;
+  font-size: 13px;
+}
+.form-row:last-child { border-bottom: none; }
+.form-row.toggle { cursor: pointer; }
+.form-row input[type='checkbox'] { cursor: pointer; }

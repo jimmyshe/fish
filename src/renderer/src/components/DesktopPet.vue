@@ -34,12 +34,11 @@
       >{{ p.char }}</span>
     </div>
 
-    <!-- 小鱼 SVG；点击/拖拽/右键的命中区域只有鱼本体，透明 padding 一律穿透 -->
+    <!-- 小鱼 SVG；点击/拖拽的命中区域只有鱼本体，透明 padding 一律穿透 -->
     <div
       class="fish-wrap"
       :class="[effectiveMoodClass, { 'is-hovered': isHovered, 'is-rainbow': isRainbow, 'face-left': facingLeft, 'is-pooping': isPooping }]"
       @mousedown.left="startDrag"
-      @contextmenu.prevent="onRightClick"
       @mouseenter="onFishHover"
       @mouseleave="onFishLeave"
     >
@@ -138,32 +137,11 @@
       @click.stop="scoopPoop(p.id)"
     >💩</div>
 
-    <!-- 设置弹窗（须在 transform 容器之外，fixed 定位才相对视口）：下班时间 + 下班提示开关，草稿式保存 -->
-    <div v-if="showSettings" class="settings-overlay" @mousedown.stop>
-      <div class="settings-panel">
-        <div class="settings-title">⏰ 下班设置</div>
-        <input
-          v-model="tempTime"
-          type="time"
-          class="time-input"
-          @keydown.enter="saveSettings"
-        />
-        <label class="reminder-toggle">
-          <input v-model="tempReminderEnabled" type="checkbox" />
-          下班提示
-        </label>
-        <div class="settings-buttons">
-          <button class="btn-cancel" @click="showSettings = false">取消</button>
-          <button class="btn-save" @click="saveSettings">保存</button>
-        </div>
-      </div>
-    </div>
-
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useDrag } from '../composables/useDrag'
 import { usePetScheduler } from '../composables/usePetScheduler'
 import { petTime } from '../lib/petTime'
@@ -190,9 +168,6 @@ const scheduler = usePetScheduler()
 const workEndTime = ref('18:00')
 const workEndReminderEnabled = ref(true)
 const currentTime = ref(new Date())
-const showSettings = ref(false)
-const tempTime = ref('18:00')
-const tempReminderEnabled = ref(true)
 
 const MS_PER_SECOND = 1000
 const MS_PER_MINUTE = 60 * MS_PER_SECOND
@@ -231,7 +206,7 @@ function persistFishPosition() {
 // ── 动态点击穿透 ──────────────────────────────────
 // 默认全屏穿透；光标位于鱼本体/气泡/交互 UI 上时临时关闭。状态去重：只在变化时发 IPC。
 // 命中区域是可见元素而非 320×200 容器大框：透明 padding 一律穿透。
-const INTERACTIVE_SELECTOR = '.fish-wrap, .bubble-wrap, .settings-panel, .poop'
+const INTERACTIVE_SELECTOR = '.fish-wrap, .bubble-wrap, .poop'
 let clickThrough = true
 
 function hitInteractiveAt(x: number, y: number): boolean {
@@ -241,7 +216,7 @@ function hitInteractiveAt(x: number, y: number): boolean {
 
 function updateClickThrough(hitInteractive: boolean) {
   // 拖拽进行期间保持不穿透（拖拽中光标会离开鱼身，此时开穿透会丢失 mouseup 导致拖拽卡死）；
-  // 面板打开不是强制条件：默认全屏穿透，纯命中检测驱动（设置面板开着也能点桌面其他应用）
+  // 其余情况纯命中检测驱动（游乐场窗口内无任何面板 UI）
   const desired = isDragging.value ? false : !hitInteractive
   if (desired === clickThrough) return
   clickThrough = desired
@@ -251,12 +226,6 @@ function updateClickThrough(hitInteractive: boolean) {
 function handleHitTest(e: MouseEvent) {
   updateClickThrough(hitInteractiveAt(e.clientX, e.clientY))
 }
-
-watch(showSettings, () => {
-  // 设置弹窗开关后按当前光标位置主动做一次命中检测
-  // （解决「面板恰好在光标下打开」的边角：不常开强制不穿透）
-  updateClickThrough(hitInteractiveAt(lastMouseClientPos.x, lastMouseClientPos.y))
-})
 
 // ── 互动消息 ──────────────────────────────────────
 const interactMessage = ref('')
@@ -499,7 +468,7 @@ function scheduleMonologue() {
 // 常驻 tick 驱动速度向量积分（漫游），取代旧的定时小幅跳动：
 // 漫游转向力 + 边缘软斥力 + 鼠标回避场叠加；鼠标快速贴近触发受惊 →
 // 优先执行一次逃窜，结束后恢复漫游。偶尔停歇。
-// 拖拽 / 睡眠 / 设置弹窗期间 tick 照跑但不积分（鱼保持不动）。
+// 拖拽 / 睡眠期间 tick 照跑但不积分（鱼保持不动）。
 const swimState = {
   phase: 'swim' as 'swim' | 'pause' | 'dash',
   vx: 0,
@@ -524,7 +493,7 @@ function swimTick() {
   const dt = Math.min((now - lastTickAt) / MS_PER_SECOND, 0.1)
   lastTickAt = now
 
-  if (isDragging.value || isSleeping.value || showSettings.value) return
+  if (isDragging.value || isSleeping.value) return
 
   swimState.phaseLeftMs -= dt * MS_PER_SECOND
 
@@ -652,15 +621,16 @@ const unsubscribeGlobal: Array<() => void> = []
 
 onMounted(async () => {
   if (window.api) {
-    workEndTime.value = await window.api.getWorkEndTime()
-    workEndReminderEnabled.value = await window.api.getWorkEndReminderEnabled()
-    tempTime.value = workEndTime.value
-    window.api.onOpenSettings(() => {
-      // 打开时同步草稿：取消丢弃的改动不会残留到下次打开
-      tempTime.value = workEndTime.value
-      tempReminderEnabled.value = workEndReminderEnabled.value
-      showSettings.value = true
-    })
+    // 配置：先拉一次，之后订阅 config-changed 广播（主面板修改即时同步过来）
+    const config = await window.api.getConfig()
+    workEndTime.value = config.workEndTime
+    workEndReminderEnabled.value = config.workEndReminderEnabled
+    unsubscribeGlobal.push(window.api.onConfigChanged((updated) => {
+      workEndTime.value = updated.workEndTime
+      workEndReminderEnabled.value = updated.workEndReminderEnabled
+      // poopEnabled 只在真实变化时重应用，避免无关配置变更重置排泄调度链
+      if (updated.poopEnabled !== poopEnabled.value) applyPoopEnabled(updated.poopEnabled)
+    }))
 
     // 鱼的位置：读取持久化配置（无效值回退屏幕右下角附近）
     const saved = await window.api.getFishPosition()
@@ -672,16 +642,19 @@ onMounted(async () => {
     unsubscribeGlobal.push(window.api.onGlobalMouseMove((pos) => {
       lastGlobalMouseAt = Date.now()
       handleMouseActivity(pos.x, pos.y)
+      // Linux 上 setIgnoreMouseEvents 的 forward 不生效（仅 darwin/win32），
+      // 穿透开启时窗口收不到 mousemove，命中检测改由全局钩子位置驱动。
+      // 游乐场窗口固定覆盖主屏 (0,0)，屏幕坐标减去窗口原点即客户端坐标。
+      updateClickThrough(hitInteractiveAt(pos.x - window.screenX, pos.y - window.screenY))
     }))
     unsubscribeGlobal.push(window.api.onGlobalMouseClick((pos) => {
       // 全局点击暂无消费者，先留调试日志
       console.debug('[globalMouse] click', pos)
     }))
 
-    // 拉屎：恢复已拉出的屎；开关先拉一次，之后订阅主进程推送（托盘菜单切换）
+    // 拉屎：恢复已拉出的屎；开关初始值取自配置，之后由 config-changed 驱动
     poops.value = await window.api.getPoops()
-    applyPoopEnabled(await window.api.getPoopEnabled())
-    unsubscribeGlobal.push(window.api.onPoopEnabledChanged(applyPoopEnabled))
+    applyPoopEnabled(config.poopEnabled)
   }
 
   // 动态命中检测：穿透开启时 mousemove 由 forward 转发而来
@@ -751,25 +724,6 @@ function onFishClick() {
   showMsg(tapMessages[Math.floor(Math.random() * tapMessages.length)], 2000)
   spawnParticles(['❤️', '✨', '💕', '⭐', '💛', '💙'], 2 + Math.floor(Math.random() * 2))
   addCombo()
-}
-
-function onRightClick() {
-  if (window.api) window.api.showContextMenu()
-}
-
-async function saveSettings() {
-  if (!tempTime.value) return
-  if (window.api) {
-    // 以主进程返回的已保存配置为准，避免本地先写、异步失败导致分叉
-    await window.api.setWorkEndTime(tempTime.value)
-    const config = await window.api.setWorkEndReminderEnabled(tempReminderEnabled.value)
-    workEndTime.value = config.workEndTime
-    workEndReminderEnabled.value = config.workEndReminderEnabled
-  } else {
-    workEndTime.value = tempTime.value
-    workEndReminderEnabled.value = tempReminderEnabled.value
-  }
-  showSettings.value = false
 }
 </script>
 
@@ -1009,45 +963,4 @@ async function saveSettings() {
   transition: transform 0.15s ease;
 }
 .poop:hover { transform: translate(-50%, -50%) scale(1.15); }
-
-/* ── 设置弹窗 ── */
-.settings-overlay {
-  position: fixed; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  z-index: 100;
-}
-.settings-panel {
-  background: white; border-radius: 16px;
-  padding: 20px 24px;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.2);
-  min-width: 220px; cursor: default;
-}
-.settings-title {
-  font-size: 14px; font-weight: 700; color: #2d3436;
-  margin-bottom: 14px;
-  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
-}
-.time-input {
-  width: 100%; padding: 8px 12px;
-  border: 2px solid #74b9ff; border-radius: 8px;
-  font-size: 20px; text-align: center;
-  outline: none; color: #2d3436; margin-bottom: 14px;
-}
-.time-input:focus { border-color: #0984e3; }
-.reminder-toggle {
-  display: flex; align-items: center; gap: 6px;
-  font-size: 13px; color: #2d3436; margin-bottom: 14px;
-  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
-  cursor: pointer; user-select: none;
-}
-.settings-buttons { display: flex; gap: 10px; justify-content: flex-end; }
-.btn-cancel, .btn-save {
-  padding: 6px 16px; border-radius: 8px; border: none;
-  cursor: pointer; font-size: 13px;
-  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
-  transition: opacity 0.2s;
-}
-.btn-cancel { background: #dfe6e9; color: #636e72; }
-.btn-save   { background: #74b9ff; color: white; font-weight: 600; }
-.btn-cancel:hover, .btn-save:hover { opacity: 0.85; }
 </style>

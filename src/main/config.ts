@@ -6,6 +6,12 @@ export interface ConfigStoreOptions {
   configPath: string
   /** 写盘去抖毫秒数，默认 500（窗口拖动等高频更新合并为一次写盘） */
   debounceMs?: number
+  /**
+   * set 后的广播钩子（完整 Config）：配置同步的唯一缝隙。
+   * 生产环境由 index.ts 注入为 config-changed 全窗口广播；
+   * 广播立即触发（不经去抖），落盘仍走去抖。
+   */
+  onChanged?: (config: Config) => void
 }
 
 /**
@@ -19,7 +25,7 @@ export interface ConfigStore {
   flush: () => void
 }
 
-export function createConfigStore({ configPath, debounceMs = 500 }: ConfigStoreOptions): ConfigStore {
+export function createConfigStore({ configPath, debounceMs = 500, onChanged }: ConfigStoreOptions): ConfigStore {
   let config = load()
   let pendingTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -56,6 +62,7 @@ export function createConfigStore({ configPath, debounceMs = 500 }: ConfigStoreO
     set: (patch) => {
       config = { ...config, ...patch }
       schedulePersist()
+      onChanged?.(config)
       return config
     },
     flush: () => {

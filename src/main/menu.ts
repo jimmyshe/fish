@@ -1,168 +1,29 @@
 import { app, Menu } from 'electron'
-import type { BrowserWindow, MenuItem, MenuItemConstructorOptions, Tray } from 'electron'
-import { is } from '@electron-toolkit/utils'
-import type { AuthState } from '../shared/api'
-
-/** 菜单模块依赖的最小配置形状（index.ts 的 Config 结构满足此接口） */
-export interface MenuConfig {
-  workEndTime: string
-  autoLaunch: boolean
-  globalMouseTracking: boolean
-  poopEnabled: boolean
-}
+import type { Tray } from 'electron'
+import type { MainPanelTab } from '../shared/api'
 
 export interface MenuDeps {
   getTray: () => Tray | null
-  getWindow: () => BrowserWindow | null
-  getConfig: () => MenuConfig
-  setConfig: (patch: Partial<MenuConfig>) => void
-  /** 全局鼠标追踪开关变更后即时应用（start/stop 钩子） */
-  applyGlobalMouseTracking: (enabled: boolean) => void
-  /** 拉屎开关变更后推送给 renderer（主→渲染 IPC） */
-  applyPoopEnabled: (enabled: boolean) => void
-  /** 当前登录状态（auth 模块为属主），驱动「登录/退出登录」菜单项 */
-  getAuthState: () => AuthState
-  /** 点击「登录」：发起 PocketID 登录 */
-  login: () => void
-  /** 点击「退出登录」：纯本地退出 */
-  logout: () => void
-  /** 点击「🏆 排行榜」：打开（或聚焦）独立联网窗口 */
-  openNetworkPanel: () => void
+  /** 点击「⚙️ 设置」/「🏆 排行榜」：打开（或聚焦）主面板并切到对应 tab */
+  openMainPanel: (tab: MainPanelTab) => void
 }
 
 /**
- * 菜单模块：tray 菜单与右键菜单的唯一属主。
- * Interface：updateTrayMenu / popupContextMenu / setAutoLaunch。
- * 菜单形状只有一份定义；自启动的 更新→保存→应用→刷新 顺序由模块保证。
+ * 菜单模块：托盘菜单的唯一属主。
+ * 菜单固定三项：设置 / 排行榜（deep-link 主面板 tab）与退出；
+ * 不承担任何设置与窗口管理功能（ADR 0005）。
  */
 export function createMenuModule(deps: MenuDeps) {
-  function applyAutoLaunch(enabled: boolean): void {
-    // 开发模式下路径不对，仅生产包生效
-    if (is.dev) return
-    app.setLoginItemSettings({
-      openAtLogin: enabled,
-      name: '摸鱼宠物'
-    })
-  }
-
-  function buildMenu(opts: { showToggle?: boolean; showPin?: boolean; showMouseTracking?: boolean; showPoop?: boolean }): MenuItemConstructorOptions[] {
-    const config = deps.getConfig()
-    const mainWindow = deps.getWindow()
-    const items: MenuItemConstructorOptions[] = [
-      {
-        label: `🕐 下班时间: ${config.workEndTime}`,
-        enabled: false
-      },
-      { type: 'separator' },
-      {
-        label: '⏰ 设置下班时间',
-        click: () => deps.getWindow()?.webContents.send('open-settings')
-      },
-      {
-        label: '🏆 排行榜',
-        click: () => deps.openNetworkPanel()
-      }
-    ]
-
-    if (opts.showToggle) {
-      items.push({
-        label: '👁 显示/隐藏',
-        click: () => {
-          const win = deps.getWindow()
-          if (win?.isVisible()) {
-            win.hide()
-          } else {
-            win?.show()
-          }
-        }
-      })
-    }
-
-    if (opts.showPin) {
-      items.push({
-        label: '📌 置顶',
-        type: 'checkbox',
-        checked: mainWindow?.isAlwaysOnTop() ?? true,
-        click: (item: MenuItem) => {
-          const win = deps.getWindow()
-          win?.setAlwaysOnTop(item.checked)
-          if (item.checked && process.platform !== 'darwin') {
-            win?.setAlwaysOnTop(true, 'screen-saver')
-          }
-        }
-      })
-    }
-
-    if (opts.showMouseTracking) {
-      items.push({
-        label: '🖱 全局鼠标追踪',
-        type: 'checkbox',
-        checked: deps.getConfig().globalMouseTracking,
-        click: (item: MenuItem) => setGlobalMouseTracking(item.checked)
-      })
-    }
-
-    if (opts.showPoop) {
-      items.push({
-        label: '💩 拉屎',
-        type: 'checkbox',
-        checked: deps.getConfig().poopEnabled,
-        click: (item: MenuItem) => setPoopEnabled(item.checked)
-      })
-    }
-
-    // 登录项随 auth 状态切换（auth 模块状态变更时由 index.ts 触发 updateTrayMenu 重建）
-    const authState = deps.getAuthState()
-    items.push(authState.signedIn
-      ? { label: `🚪 退出登录（${authState.username ?? '玩家'}）`, click: () => deps.logout() }
-      : { label: '🔑 登录', click: () => deps.login() }
-    )
-
-    items.push(
-      {
-        label: '🚀 开机自启动',
-        type: 'checkbox',
-        checked: deps.getConfig().autoLaunch,
-        click: (item: MenuItem) => setAutoLaunch(item.checked)
-      },
-      { type: 'separator' },
-      {
-        label: '❌ 退出',
-        click: () => app.quit()
-      }
-    )
-    return items
-  }
-
   function updateTrayMenu(): void {
     const tray = deps.getTray()
     if (!tray) return
-    tray.setContextMenu(Menu.buildFromTemplate(buildMenu({ showToggle: true, showMouseTracking: true, showPoop: true })))
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: '⚙️ 设置', click: () => deps.openMainPanel('settings') },
+      { label: '🏆 排行榜', click: () => deps.openMainPanel('leaderboard') },
+      { type: 'separator' },
+      { label: '❌ 退出', click: () => app.quit() }
+    ]))
   }
 
-  function popupContextMenu(): void {
-    const mainWindow = deps.getWindow()
-    if (!mainWindow) return
-    Menu.buildFromTemplate(buildMenu({ showPin: true })).popup({ window: mainWindow })
-  }
-
-  function setAutoLaunch(enabled: boolean): void {
-    deps.setConfig({ autoLaunch: enabled })
-    applyAutoLaunch(enabled)
-    updateTrayMenu()
-  }
-
-  function setGlobalMouseTracking(enabled: boolean): void {
-    deps.setConfig({ globalMouseTracking: enabled })
-    deps.applyGlobalMouseTracking(enabled)
-    updateTrayMenu()
-  }
-
-  function setPoopEnabled(enabled: boolean): void {
-    deps.setConfig({ poopEnabled: enabled })
-    deps.applyPoopEnabled(enabled)
-    updateTrayMenu()
-  }
-
-  return { updateTrayMenu, popupContextMenu, setAutoLaunch, setGlobalMouseTracking, setPoopEnabled }
+  return { updateTrayMenu }
 }

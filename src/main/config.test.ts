@@ -98,4 +98,26 @@ describe('configStore', () => {
     const saved = JSON.parse(readFileSync(configPath, 'utf-8'))
     expect(saved.poops).toEqual(poops)
   })
+
+  it('onChanged：每次 set 立即以完整 Config 触发（不经去抖），flush 不触发', () => {
+    const onChanged = vi.fn()
+    store = createConfigStore({ configPath, debounceMs: 500, onChanged })
+
+    store.set({ workEndTime: '17:30' })
+    expect(onChanged).toHaveBeenCalledTimes(1)
+    expect(onChanged).toHaveBeenLastCalledWith({ ...DEFAULT_CONFIG, workEndTime: '17:30' })
+    expect(() => readFileSync(configPath)).toThrow() // 广播不等待落盘
+
+    store.set({ poopEnabled: false })
+    expect(onChanged).toHaveBeenCalledTimes(2)
+    expect(onChanged).toHaveBeenLastCalledWith(store.get())
+
+    store.flush()
+    expect(onChanged).toHaveBeenCalledTimes(2)
+  })
+
+  it('onChanged 缺省：set 正常落盘，无广播', () => {
+    store = createConfigStore({ configPath, debounceMs: 500 })
+    expect(() => store.set({ workEndTime: '17:30' })).not.toThrow()
+  })
 })

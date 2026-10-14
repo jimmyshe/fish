@@ -1,19 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { createMenuModule, type MenuConfig } from './menu'
-import type { AuthState } from '../shared/api'
+import { createMenuModule } from './menu'
 
 const mocks = vi.hoisted(() => ({
-  buildFromTemplate: vi.fn((template: unknown) => ({ template, popup: vi.fn() })),
+  buildFromTemplate: vi.fn((template: unknown) => ({ template })),
   setContextMenu: vi.fn(),
-  setLoginItemSettings: vi.fn(),
-  quit: vi.fn(),
-  send: vi.fn(),
-  electronKit: { is: { dev: false } }
+  quit: vi.fn()
 }))
 
 vi.mock('electron', () => ({
   app: {
-    setLoginItemSettings: mocks.setLoginItemSettings,
     quit: mocks.quit
   },
   Menu: {
@@ -21,42 +16,16 @@ vi.mock('electron', () => ({
   }
 }))
 
-vi.mock('@electron-toolkit/utils', () => ({
-  is: mocks.electronKit.is
-}))
-
 type Template = Array<Record<string, unknown>>
 
-function makeDeps(configOverrides: Partial<MenuConfig> = {}, authState: AuthState = { signedIn: false }) {
-  const config: MenuConfig = { workEndTime: '18:00', autoLaunch: false, globalMouseTracking: true, poopEnabled: true, ...configOverrides }
-  const setConfig = vi.fn()
-  const applyGlobalMouseTracking = vi.fn()
-  const applyPoopEnabled = vi.fn()
-  const login = vi.fn()
-  const logout = vi.fn()
-  const openNetworkPanel = vi.fn()
+function makeDeps() {
+  const openMainPanel = vi.fn()
   const tray = { setContextMenu: mocks.setContextMenu }
-  const win = {
-    webContents: { send: mocks.send },
-    isVisible: () => true,
-    hide: vi.fn(),
-    show: vi.fn(),
-    isAlwaysOnTop: () => true,
-    setAlwaysOnTop: vi.fn()
-  }
   const deps = {
     getTray: () => tray as never,
-    getWindow: () => win as never,
-    getConfig: () => config,
-    setConfig,
-    applyGlobalMouseTracking,
-    applyPoopEnabled,
-    getAuthState: () => authState,
-    login,
-    logout,
-    openNetworkPanel
+    openMainPanel
   }
-  return { deps, config, setConfig, applyGlobalMouseTracking, applyPoopEnabled, login, logout, openNetworkPanel, tray, win }
+  return { deps, openMainPanel, tray }
 }
 
 function lastTemplate(): Template {
@@ -67,162 +36,56 @@ function lastTemplate(): Template {
 describe('menu module', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.electronKit.is.dev = false
   })
 
-  it('tray 菜单：含下班时间、「显示/隐藏」与「全局鼠标追踪」，不含「置顶」', () => {
-    const { deps } = makeDeps({ workEndTime: '18:30' })
+  it('托盘菜单固定三项：设置 / 排行榜 / 退出', () => {
+    const { deps } = makeDeps()
     const menu = createMenuModule(deps)
     menu.updateTrayMenu()
 
     const labels = lastTemplate().map(i => i.label)
-    expect(labels).toContain('🕐 下班时间: 18:30')
-    expect(labels).toContain('👁 显示/隐藏')
-    expect(labels).toContain('🖱 全局鼠标追踪')
-    expect(labels).not.toContain('📌 置顶')
+    expect(labels).toEqual(['⚙️ 设置', '🏆 排行榜', undefined, '❌ 退出'])
     expect(mocks.setContextMenu).toHaveBeenCalledTimes(1)
   })
 
-  it('右键菜单：含「置顶」，不含「显示/隐藏」与「全局鼠标追踪」', () => {
-    const { deps } = makeDeps()
-    const menu = createMenuModule(deps)
-    menu.popupContextMenu()
-
-    const labels = lastTemplate().map(i => i.label)
-    expect(labels).toContain('📌 置顶')
-    expect(labels).not.toContain('👁 显示/隐藏')
-    expect(labels).not.toContain('🖱 全局鼠标追踪')
-    expect(mocks.buildFromTemplate.mock.results.at(-1)!.value.popup).toHaveBeenCalled()
-  })
-
-  it('setAutoLaunch：更新 → 保存 → 应用 → 刷新，顺序固定', () => {
-    const { deps, setConfig } = makeDeps()
-    const menu = createMenuModule(deps)
-    menu.setAutoLaunch(true)
-
-    expect(setConfig).toHaveBeenCalledWith({ autoLaunch: true })
-    expect(mocks.setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true, name: '摸鱼宠物' })
-    expect(mocks.setContextMenu).toHaveBeenCalledTimes(1) // 菜单刷新
-    expect(setConfig.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.setLoginItemSettings.mock.invocationCallOrder[0])
-    expect(mocks.setLoginItemSettings.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.setContextMenu.mock.invocationCallOrder[0])
-  })
-
-  it('开发模式：跳过系统自启动设置，但保存与菜单刷新照做', () => {
-    mocks.electronKit.is.dev = true
-    const { deps, setConfig } = makeDeps()
-    const menu = createMenuModule(deps)
-    menu.setAutoLaunch(true)
-
-    expect(mocks.setLoginItemSettings).not.toHaveBeenCalled()
-    expect(setConfig).toHaveBeenCalledTimes(1)
-    expect(mocks.setContextMenu).toHaveBeenCalledTimes(1)
-  })
-
-  it('菜单里的自启动勾选走同一条 setAutoLaunch 序列', () => {
-    const { deps, setConfig } = makeDeps()
+  it('「⚙️ 设置」打开主面板设置 tab', () => {
+    const { deps, openMainPanel } = makeDeps()
     const menu = createMenuModule(deps)
     menu.updateTrayMenu()
 
-    const item = lastTemplate().find(i => i.label === '🚀 开机自启动')!
-    ;(item.click as (i: { checked: boolean }) => void)({ checked: true })
-
-    expect(setConfig).toHaveBeenCalledTimes(1)
-    expect(mocks.setLoginItemSettings).toHaveBeenCalledWith({ openAtLogin: true, name: '摸鱼宠物' })
-  })
-
-  it('「设置下班时间」菜单项向渲染进程发 open-settings', () => {
-    const { deps } = makeDeps()
-    const menu = createMenuModule(deps)
-    menu.popupContextMenu()
-
-    const item = lastTemplate().find(i => i.label === '⏰ 设置下班时间')!
+    const item = lastTemplate().find(i => i.label === '⚙️ 设置')!
     ;(item.click as () => void)()
 
-    expect(mocks.send).toHaveBeenCalledWith('open-settings')
+    expect(openMainPanel).toHaveBeenCalledWith('settings')
   })
 
-  it('「🏆 排行榜」菜单项调 openNetworkPanel（main 开独立窗口）', () => {
-    const { deps, openNetworkPanel } = makeDeps()
+  it('「🏆 排行榜」打开主面板排行榜 tab', () => {
+    const { deps, openMainPanel } = makeDeps()
     const menu = createMenuModule(deps)
     menu.updateTrayMenu()
 
     const item = lastTemplate().find(i => i.label === '🏆 排行榜')!
-    expect(item).toBeTruthy()
     ;(item.click as () => void)()
 
-    expect(openNetworkPanel).toHaveBeenCalledTimes(1)
-    expect(mocks.send).not.toHaveBeenCalledWith('open-leaderboard')
+    expect(openMainPanel).toHaveBeenCalledWith('leaderboard')
   })
 
-  it('「全局鼠标追踪」勾选：更新 → 应用 → 刷新，顺序固定', () => {
-    const { deps, setConfig, applyGlobalMouseTracking } = makeDeps({ globalMouseTracking: true })
-    const menu = createMenuModule(deps)
-    menu.updateTrayMenu()
-
-    const item = lastTemplate().find(i => i.label === '🖱 全局鼠标追踪')!
-    expect(item.type).toBe('checkbox')
-    expect(item.checked).toBe(true)
-    ;(item.click as (i: { checked: boolean }) => void)({ checked: false })
-
-    expect(setConfig).toHaveBeenCalledWith({ globalMouseTracking: false })
-    expect(applyGlobalMouseTracking).toHaveBeenCalledWith(false)
-    expect(mocks.setContextMenu).toHaveBeenCalledTimes(2) // 初次构建 + 切换后刷新
-    expect(setConfig.mock.invocationCallOrder[0])
-      .toBeLessThan(applyGlobalMouseTracking.mock.invocationCallOrder[0])
-    expect(applyGlobalMouseTracking.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.setContextMenu.mock.invocationCallOrder[1])
-  })
-
-  it('「拉屎」勾选：更新 → 推送 renderer → 刷新，顺序固定', () => {
-    const { deps, setConfig, applyPoopEnabled } = makeDeps({ poopEnabled: true })
-    const menu = createMenuModule(deps)
-    menu.updateTrayMenu()
-
-    const item = lastTemplate().find(i => i.label === '💩 拉屎')!
-    expect(item.type).toBe('checkbox')
-    expect(item.checked).toBe(true)
-    ;(item.click as (i: { checked: boolean }) => void)({ checked: false })
-
-    expect(setConfig).toHaveBeenCalledWith({ poopEnabled: false })
-    expect(applyPoopEnabled).toHaveBeenCalledWith(false)
-    expect(mocks.setContextMenu).toHaveBeenCalledTimes(2) // 初次构建 + 切换后刷新
-    expect(setConfig.mock.invocationCallOrder[0])
-      .toBeLessThan(applyPoopEnabled.mock.invocationCallOrder[0])
-    expect(applyPoopEnabled.mock.invocationCallOrder[0])
-      .toBeLessThan(mocks.setContextMenu.mock.invocationCallOrder[1])
-  })
-
-  it('右键菜单不含「拉屎」（开关只在托盘菜单）', () => {
+  it('「❌ 退出」退出应用', () => {
     const { deps } = makeDeps()
     const menu = createMenuModule(deps)
-    menu.popupContextMenu()
-
-    const labels = lastTemplate().map(i => i.label)
-    expect(labels).not.toContain('💩 拉屎')
-  })
-
-  it('未登录：菜单显示「登录」，点击调 login', () => {
-    const { deps, login } = makeDeps({}, { signedIn: false })
-    const menu = createMenuModule(deps)
     menu.updateTrayMenu()
 
-    const item = lastTemplate().find(i => i.label === '🔑 登录')!
-    expect(item).toBeTruthy()
+    const item = lastTemplate().find(i => i.label === '❌ 退出')!
     ;(item.click as () => void)()
-    expect(login).toHaveBeenCalledTimes(1)
+
+    expect(mocks.quit).toHaveBeenCalledTimes(1)
   })
 
-  it('已登录：菜单显示「退出登录（用户名）」，点击调 logout', () => {
-    const { deps, logout } = makeDeps({}, { signedIn: true, username: '小鱼干' })
-    const menu = createMenuModule(deps)
+  it('托盘未创建时不建菜单', () => {
+    const openMainPanel = vi.fn()
+    const menu = createMenuModule({ getTray: () => null, openMainPanel })
     menu.updateTrayMenu()
 
-    const item = lastTemplate().find(i => i.label === '🚪 退出登录（小鱼干）')!
-    expect(item).toBeTruthy()
-    expect(lastTemplate().map(i => i.label)).not.toContain('🔑 登录')
-    ;(item.click as () => void)()
-    expect(logout).toHaveBeenCalledTimes(1)
+    expect(mocks.buildFromTemplate).not.toHaveBeenCalled()
   })
 })

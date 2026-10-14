@@ -1,19 +1,21 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { Api, AuthState, LeaderboardResponse, MeResponse, ScreenPoint } from '../shared/api'
-import type { Poop } from '../shared/config'
+import type { Api, AuthState, LeaderboardResponse, MainPanelTab, MeResponse, ScreenPoint } from '../shared/api'
+import type { Config, Poop } from '../shared/config'
 
 const api: Api = {
-  getWorkEndTime: (): Promise<string> => {
-    return ipcRenderer.invoke('get-work-end-time')
+  getConfig: (): Promise<Config> => {
+    return ipcRenderer.invoke('get-config')
   },
-  setWorkEndTime: (time: string) => {
+  onConfigChanged: (callback: (config: Config) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, config: Config): void => callback(config)
+    ipcRenderer.on('config-changed', handler)
+    return () => ipcRenderer.removeListener('config-changed', handler)
+  },
+  setWorkEndTime: (time: string): Promise<void> => {
     return ipcRenderer.invoke('set-work-end-time', time)
   },
-  getWorkEndReminderEnabled: (): Promise<boolean> => {
-    return ipcRenderer.invoke('get-work-end-reminder-enabled')
-  },
-  setWorkEndReminderEnabled: (enabled: boolean) => {
+  setWorkEndReminderEnabled: (enabled: boolean): Promise<void> => {
     return ipcRenderer.invoke('set-work-end-reminder-enabled', enabled)
   },
   getFishPosition: (): Promise<ScreenPoint> => {
@@ -28,16 +30,17 @@ const api: Api = {
   setGlobalMouseTracking: (enabled: boolean): void => {
     ipcRenderer.send('set-global-mouse-tracking', enabled)
   },
-  getPoopEnabled: (): Promise<boolean> => {
-    return ipcRenderer.invoke('get-poop-enabled')
-  },
   setPoopEnabled: (enabled: boolean): void => {
     ipcRenderer.send('set-poop-enabled', enabled)
   },
-  onPoopEnabledChanged: (callback: (enabled: boolean) => void): (() => void) => {
-    const handler = (_event: IpcRendererEvent, enabled: boolean): void => callback(enabled)
-    ipcRenderer.on('poop-enabled-changed', handler)
-    return () => ipcRenderer.removeListener('poop-enabled-changed', handler)
+  setAutoLaunch: (enabled: boolean): void => {
+    ipcRenderer.send('set-auto-launch', enabled)
+  },
+  getAlwaysOnTop: (): Promise<boolean> => {
+    return ipcRenderer.invoke('get-always-on-top')
+  },
+  setAlwaysOnTop: (enabled: boolean): void => {
+    ipcRenderer.send('set-always-on-top', enabled)
   },
   getPoops: (): Promise<Poop[]> => {
     return ipcRenderer.invoke('get-poops')
@@ -45,16 +48,13 @@ const api: Api = {
   setPoops: (poops: Poop[]): void => {
     ipcRenderer.send('set-poops', poops)
   },
-  showContextMenu: (): void => {
-    ipcRenderer.send('show-context-menu')
-  },
   quit: (): void => {
     ipcRenderer.send('quit')
   },
-  onOpenSettings: (callback: () => void): (() => void) => {
-    const handler = (): void => callback()
-    ipcRenderer.on('open-settings', handler)
-    return () => ipcRenderer.removeListener('open-settings', handler)
+  onSwitchPanelTab: (callback: (tab: MainPanelTab) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, tab: MainPanelTab): void => callback(tab)
+    ipcRenderer.on('panel-switch-tab', handler)
+    return () => ipcRenderer.removeListener('panel-switch-tab', handler)
   },
   login: (): Promise<void> => {
     return ipcRenderer.invoke('auth-login')

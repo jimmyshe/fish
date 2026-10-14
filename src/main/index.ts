@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, screen, shell, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, ipcMain, safeStorage, screen, shell, Tray, nativeImage } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { createMenuModule } from './menu'
@@ -8,7 +8,8 @@ import { createReporter, type Reporter } from './reporter'
 import { createApiClient, type ApiClient } from './apiClient'
 import { startGlobalMouseTracking, stopGlobalMouseTracking } from './globalMouse'
 import { startAlwaysOnTopWatchdog } from './alwaysOnTop'
-import type { Poop } from '../shared/config'
+import type { Config, Poop } from '../shared/config'
+import type { MainPanelTab } from '../shared/api'
 import trayIconUrl from './tray-icon.png?inline'
 
 let configStore: ConfigStore
@@ -16,7 +17,7 @@ let auth: AuthModule
 let reporter: Reporter
 let apiClient: ApiClient
 let mainWindow: BrowserWindow | null = null
-let networkWindow: BrowserWindow | null = null
+let mainPanelWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 
 /** 按配置开关即时 start/stop 全局鼠标钩子 */
@@ -28,15 +29,35 @@ function applyGlobalMouseTracking(enabled: boolean): void {
   }
 }
 
-/** 联网窗口（排行榜）：独立普通小窗口，与游乐场窗口完全解耦；关闭即销毁，再开重建 */
-function openNetworkWindow(): void {
-  if (networkWindow) {
-    networkWindow.focus()
+/** 开机自启动：开发模式下路径不对，仅生产包生效 */
+function applyAutoLaunch(enabled: boolean): void {
+  if (is.dev) return
+  app.setLoginItemSettings({
+    openAtLogin: enabled,
+    name: '摸鱼宠物'
+  })
+}
+
+/** 游乐场窗口置顶：看门狗周期性重新声明，用户关闭时自动跳过（见 alwaysOnTop.ts） */
+function applyAlwaysOnTop(enabled: boolean): void {
+  if (!mainWindow) return
+  mainWindow.setAlwaysOnTop(enabled)
+  if (enabled && process.platform !== 'darwin') {
+    mainWindow.setAlwaysOnTop(true, 'screen-saver')
+  }
+}
+
+/** 主面板：设置 + 排行榜的唯一 UI 入口；单例，关闭即销毁，再开重建。
+ *  已存在时聚焦并推送 panel-switch-tab 切 tab，否则带 ?tab= 查询参数新建。 */
+function openMainPanel(tab: MainPanelTab): void {
+  if (mainPanelWindow) {
+    mainPanelWindow.focus()
+    mainPanelWindow.webContents.send('panel-switch-tab', tab)
     return
   }
-  networkWindow = new BrowserWindow({
-    width: 380,
-    height: 560,
+  mainPanelWindow = new BrowserWindow({
+    width: 440,
+    height: 620,
     autoHideMenuBar: true,
     resizable: false,
     webPreferences: {
@@ -45,35 +66,19 @@ function openNetworkWindow(): void {
       contextIsolation: true
     }
   })
-  networkWindow.on('closed', () => { networkWindow = null })
+  mainPanelWindow.on('closed', () => { mainPanelWindow = null })
 
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    networkWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/network.html`)
+    mainPanelWindow.loadURL(`${process.env['ELECTRON_RENDERER_URL']}/panel.html?tab=${tab}`)
   } else {
-    networkWindow.loadFile(join(__dirname, '../renderer/network.html'))
+    mainPanelWindow.loadFile(join(__dirname, '../renderer/panel.html'), { query: { tab } })
   }
 }
 
-// 菜单模块：tray / 右键菜单 / 自启动序列的唯一属主
+// 菜单模块：托盘菜单的唯一属主（固定三项：设置 / 排行榜 / 退出）
 const menu = createMenuModule({
   getTray: () => tray,
-  getWindow: () => mainWindow,
-  getConfig: () => configStore.get(),
-  setConfig: (patch) => { configStore.set(patch) },
-  applyGlobalMouseTracking,
-  // 拉屎开关：推送给 renderer 即时启停定时排泄调度
-  applyPoopEnabled: (enabled) => { mainWindow?.webContents.send('poop-enabled-changed', enabled) },
-  // auth 在 app 就绪后创建，菜单点击只发生在那之后
-  getAuthState: () => auth?.getState() ?? { signedIn: false },
-  login: () => {
-    // 打包版看不到 console，登录失败必须让用户可见
-    void auth?.login().catch((err) => {
-      console.warn('[auth] 登录失败', err)
-      dialog.showErrorBox('登录失败', err instanceof Error ? err.message : String(err))
-    })
-  },
-  logout: () => { void auth?.logout() },
-  openNetworkPanel: openNetworkWindow
+  openMainPanel
 })
 
 function createWindow(): void {
@@ -128,6 +133,9 @@ ipcMain.on('set-click-through', (_event, ignore: boolean) => {
   mainWindow.setIgnoreMouseEvents(ignore, ignore ? { forward: true } : undefined)
 })
 
+// 配置：读走 get-config；所有写经 configStore.set 合并，同步回执走 config-changed 广播
+ipcMain.handle('get-config', () => configStore.get())
+
 ipcMain.handle('get-fish-position', () => {
   const { windowX, windowY } = configStore.get()
   return { x: windowX, y: windowY }
@@ -140,17 +148,23 @@ ipcMain.on('set-fish-position', (_event, x: number, y: number) => {
 ipcMain.on('set-global-mouse-tracking', (_event, enabled: boolean) => {
   configStore.set({ globalMouseTracking: enabled })
   applyGlobalMouseTracking(enabled)
-  menu.updateTrayMenu()
-})
-
-ipcMain.handle('get-poop-enabled', () => {
-  return configStore.get().poopEnabled
 })
 
 ipcMain.on('set-poop-enabled', (_event, enabled: boolean) => {
-  // renderer 发起的切换：renderer 本地已应用，这里只落盘并刷新托盘勾选
   configStore.set({ poopEnabled: enabled })
-  menu.updateTrayMenu()
+})
+
+ipcMain.on('set-auto-launch', (_event, enabled: boolean) => {
+  configStore.set({ autoLaunch: enabled })
+  applyAutoLaunch(enabled)
+})
+
+ipcMain.handle('get-always-on-top', () => {
+  return mainWindow?.isAlwaysOnTop() ?? true
+})
+
+ipcMain.on('set-always-on-top', (_event, enabled: boolean) => {
+  applyAlwaysOnTop(enabled)
 })
 
 ipcMain.handle('get-poops', () => {
@@ -161,27 +175,12 @@ ipcMain.on('set-poops', (_event, poops: Poop[]) => {
   configStore.set({ poops })
 })
 
-ipcMain.handle('get-work-end-time', () => {
-  return configStore.get().workEndTime
-})
-
 ipcMain.handle('set-work-end-time', (_event, time: string) => {
-  const updated = configStore.set({ workEndTime: time })
-  menu.updateTrayMenu()
-  return updated
-})
-
-// 下班提示开关：入口只在 renderer 设置弹窗，invoke 型，无托盘项、无主→渲染推送
-ipcMain.handle('get-work-end-reminder-enabled', () => {
-  return configStore.get().workEndReminderEnabled
+  configStore.set({ workEndTime: time })
 })
 
 ipcMain.handle('set-work-end-reminder-enabled', (_event, enabled: boolean) => {
-  return configStore.set({ workEndReminderEnabled: enabled })
-})
-
-ipcMain.on('show-context-menu', () => {
-  menu.popupContextMenu()
+  configStore.set({ workEndReminderEnabled: enabled })
 })
 
 ipcMain.on('quit', () => app.quit())
@@ -200,23 +199,29 @@ ipcMain.handle('get-leaderboard', () => apiClient.getLeaderboard())
 ipcMain.handle('set-show-on-leaderboard', (_event, show: boolean) => apiClient.setShowOnLeaderboard(show))
 
 app.whenReady().then(async () => {
-  // 配置模块在 app 就绪后创建（userData 路径此时才可用）
-  configStore = createConfigStore({ configPath: join(app.getPath('userData'), 'config.json') })
+  // 配置模块在 app 就绪后创建（userData 路径此时才可用）；
+  // onChanged：配置同步的唯一缝隙，set 即广播完整 Config 给所有窗口
+  configStore = createConfigStore({
+    configPath: join(app.getPath('userData'), 'config.json'),
+    onChanged: (config: Config) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('config-changed', config)
+      }
+    }
+  })
   app.on('will-quit', () => configStore.flush())
 
-  // auth 模块：token 经 safeStorage 加密存 userData/auth.json（独立于明文 config.json）；
-  // 状态变更推送给 renderer 并刷新托盘菜单（「登录/退出登录」项切换）
+  // auth 模块：token 经 safeStorage 加密存 userData/auth.json（独立于明文 config.json）
   auth = createAuthModule({
     authPath: join(app.getPath('userData'), 'auth.json'),
     safeStorage,
     opener: (url) => { void shell.openExternal(url) }
   })
   auth.onStateChanged((authState) => {
-    // 广播给所有窗口（游乐场 + 联网窗口），各自订阅刷新
+    // 广播给所有窗口（游乐场 + 主面板），各自订阅刷新
     for (const win of BrowserWindow.getAllWindows()) {
       win.webContents.send('auth-state-changed', authState)
     }
-    menu.updateTrayMenu()
   })
 
   // 铲屎事件上报：token 由 auth 模块供给（过期自动续期），失败即丢弃
@@ -225,7 +230,7 @@ app.whenReady().then(async () => {
   apiClient = createApiClient({ getAccessToken: () => auth.getAccessToken() })
 
   // 同步开机自启动状态（防止手动改过注册表后不一致）
-  menu.setAutoLaunch(configStore.get().autoLaunch)
+  applyAutoLaunch(configStore.get().autoLaunch)
 
   createWindow()
   createTray()
