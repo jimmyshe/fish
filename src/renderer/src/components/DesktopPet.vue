@@ -579,18 +579,21 @@ const finColor = computed(() => ({
 })[effectiveMood.value] ?? '#a8d8f0')
 
 // 眼睛瞳孔跟随鼠标
+// 鱼头朝左时 .fish-wrap 整体 scaleX(-1) 镜像：眼睛锚点翻到 (120-84)，且 viewBox 的 +x 在屏幕上是 -x
 const eyeOffset = computed(() => {
   const el = fishSvgRef.value
   if (!el || isSleeping.value) return { x: 0, y: 0 }
   const rect = el.getBoundingClientRect()
-  const eyeCX = rect.left + 84 * (rect.width / 120)
+  const anchorX = facingLeft.value ? 120 - 84 : 84
+  const eyeCX = rect.left + anchorX * (rect.width / 120)
   const eyeCY = rect.top + 34 * (rect.height / 80)
   const dx = mousePos.value.x - eyeCX
   const dy = mousePos.value.y - eyeCY
   const dist = Math.sqrt(dx * dx + dy * dy)
   if (dist === 0) return { x: 0, y: 0 }
   const factor = Math.min(dist / 100, 1) * (isScared.value ? 1.5 : 2.5)
-  return { x: (dx / dist) * factor, y: (dy / dist) * factor }
+  const dir = facingLeft.value ? -1 : 1
+  return { x: (dx / dist) * factor * dir, y: (dy / dist) * factor }
 })
 
 const eyeX = computed(() => (mood.value === 'sad' ? 83 : 85) + eyeOffset.value.x)
