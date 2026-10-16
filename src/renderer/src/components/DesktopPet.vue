@@ -159,6 +159,7 @@ import {
   FISH_CONTAINER
 } from '../lib/fishMotion'
 import { nextPoopDelayMs, poopDropPosition, serializePoops, type Poop } from '../lib/poop'
+import { resolveSkin } from '../lib/skins'
 
 // ── 定时器调度 ────────────────────────────────────
 // 全部定时行为的唯一属主；句柄不离开模块，卸载时自动全部取消
@@ -167,6 +168,8 @@ const scheduler = usePetScheduler()
 // ── 基础状态 ──────────────────────────────────────
 const workEndTime = ref('18:00')
 const workEndReminderEnabled = ref(true)
+// 皮肤：具名调色板（lib/skins.ts 注册表属主，ADR 0006）；未知 id 渲染时回退默认
+const skinId = ref('default')
 const currentTime = ref(new Date())
 
 const MS_PER_SECOND = 1000
@@ -563,20 +566,11 @@ const effectiveMood = computed(() => {
 // 气泡样式类（sleeping/scared 用特殊色，其他用心情色）
 const effectiveMoodClass = computed(() => effectiveMood.value)
 
-const bodyColor = computed(() => ({
-  sad: '#a29bfe', nervous: '#fd79a8', happy: '#fdcb6e', normal: '#74b9ff',
-  scared: '#ff7675', sleeping: '#b2bec3'
-})[effectiveMood.value] ?? '#74b9ff')
-
-const tailColor = computed(() => ({
-  sad: '#6c5ce7', nervous: '#e84393', happy: '#e17055', normal: '#0984e3',
-  scared: '#d63031', sleeping: '#636e72'
-})[effectiveMood.value] ?? '#0984e3')
-
-const finColor = computed(() => ({
-  sad: '#9b8af4', nervous: '#fc5c8a', happy: '#ffeaa7', normal: '#a8d8f0',
-  scared: '#fab1a0', sleeping: '#dfe6e9'
-})[effectiveMood.value] ?? '#a8d8f0')
+// 皮肤取色：当前皮肤调色板按有效心情查表；只影响 body/tail/fin，眼睛/嘴/泪汗/特效不受皮肤影响
+const skinPalette = computed(() => resolveSkin(skinId.value).palette)
+const bodyColor = computed(() => skinPalette.value[effectiveMood.value].body)
+const tailColor = computed(() => skinPalette.value[effectiveMood.value].tail)
+const finColor = computed(() => skinPalette.value[effectiveMood.value].fin)
 
 // 眼睛瞳孔跟随鼠标
 // 鱼头朝左时 .fish-wrap 整体 scaleX(-1) 镜像：眼睛锚点翻到 (120-84)，且 viewBox 的 +x 在屏幕上是 -x
@@ -628,9 +622,11 @@ onMounted(async () => {
     const config = await window.api.getConfig()
     workEndTime.value = config.workEndTime
     workEndReminderEnabled.value = config.workEndReminderEnabled
+    skinId.value = config.skinId
     unsubscribeGlobal.push(window.api.onConfigChanged((updated) => {
       workEndTime.value = updated.workEndTime
       workEndReminderEnabled.value = updated.workEndReminderEnabled
+      skinId.value = updated.skinId
       // poopEnabled 只在真实变化时重应用，避免无关配置变更重置排泄调度链
       if (updated.poopEnabled !== poopEnabled.value) applyPoopEnabled(updated.poopEnabled)
     }))
@@ -884,6 +880,12 @@ function onFishClick() {
   filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
   animation: swim 3s ease-in-out infinite;
   transition: filter 0.3s ease;
+}
+
+/* 换皮肤时 body/tail/fin 平滑过渡 */
+.fish-svg polygon,
+.fish-svg ellipse {
+  transition: fill 0.3s ease;
 }
 
 /* 心情动画 */

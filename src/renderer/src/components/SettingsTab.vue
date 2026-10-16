@@ -31,12 +31,28 @@
       <span>📌 窗口置顶</span>
       <input v-model="alwaysOnTop" type="checkbox" @change="onAlwaysOnTopChange" />
     </label>
+    <div class="form-row">
+      <span>🎨 皮肤：{{ currentSkin.name }}</span>
+      <div class="skin-picker">
+        <button
+          v-for="skin in SKINS"
+          :key="skin.id"
+          type="button"
+          class="skin-swatch"
+          :class="{ active: currentSkin.id === skin.id }"
+          :style="{ background: skin.palette.normal.body }"
+          :title="skin.name"
+          @click="onSkinChange(skin.id)"
+        ></button>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Config } from '../../../shared/config'
+import { resolveSkin, SKINS } from '../lib/skins'
 
 const workEndTime = ref('18:00')
 const workEndReminderEnabled = ref(true)
@@ -45,6 +61,9 @@ const globalMouseTracking = ref(true)
 const autoLaunch = ref(false)
 // 置顶不持久化（默认开启）：走独立的 get/set IPC，不在 config 广播里
 const alwaysOnTop = ref(true)
+// 皮肤：未知 id 经 resolveSkin 回退默认（与 DesktopPet 渲染侧同一回退点）
+const skinId = ref('default')
+const currentSkin = computed(() => resolveSkin(skinId.value))
 
 function applyConfig(config: Config): void {
   workEndTime.value = config.workEndTime
@@ -52,6 +71,7 @@ function applyConfig(config: Config): void {
   poopEnabled.value = config.poopEnabled
   globalMouseTracking.value = config.globalMouseTracking
   autoLaunch.value = config.autoLaunch
+  skinId.value = config.skinId
 }
 
 let unsubscribeConfig: (() => void) | null = null
@@ -90,6 +110,10 @@ function onAutoLaunchChange(): void {
 function onAlwaysOnTopChange(): void {
   if (window.api) window.api.setAlwaysOnTop(alwaysOnTop.value)
 }
+
+function onSkinChange(id: string): void {
+  if (window.api) void window.api.setSkinId(id)
+}
 </script>
 
 <style scoped>
@@ -104,4 +128,21 @@ function onAlwaysOnTopChange(): void {
   font-family: inherit;
 }
 .time-input:focus { border-color: #0984e3; }
+
+/* 皮肤色板：代表色 = normal 心情 body 色（所见即所得） */
+.skin-picker {
+  display: flex;
+  gap: 6px;
+}
+.skin-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #dfe6e9;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.skin-swatch:hover { transform: scale(1.15); }
+.skin-swatch.active { border-color: #0984e3; transform: scale(1.15); }
 </style>

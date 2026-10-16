@@ -53,6 +53,8 @@ export interface Api {
   setClickThrough: (ignore: boolean) => void
   /** 开关全局鼠标追踪（主进程即时 start/stop 钩子） */
   setGlobalMouseTracking: (enabled: boolean) => void
+  /** 设置皮肤 id（即时生效；同步回执走 config-changed 广播）；主进程不透明持久化，未知值渲染时回退默认（ADR 0006） */
+  setSkinId: (id: string) => Promise<void>
   /** 开关拉屎（即时生效；同步回执走 config-changed 广播） */
   setPoopEnabled: (enabled: boolean) => void
   /** 开关开机自启动（主进程即时 setLoginItemSettings，仅生产包生效） */

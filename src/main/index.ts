@@ -150,6 +150,11 @@ ipcMain.on('set-global-mouse-tracking', (_event, enabled: boolean) => {
   applyGlobalMouseTracking(enabled)
 })
 
+// 皮肤：主进程不透明持久化（调色板注册表归 renderer 属主，ADR 0006）
+ipcMain.handle('set-skin-id', (_event, skinId: string) => {
+  configStore.set({ skinId })
+})
+
 ipcMain.on('set-poop-enabled', (_event, enabled: boolean) => {
   configStore.set({ poopEnabled: enabled })
 })
