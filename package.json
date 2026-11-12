@@ -12,6 +12,9 @@
     "type": "git",
     "url": "git+https://github.com/jimmyshe/fish.git"
   },
+  "engines": {
+    "node": ">=26.0.0"
+  },
   "build": {
     "appId": "com.fish.pet",
     "productName": "fish-pet",

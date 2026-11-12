@@ -12,7 +12,7 @@
 - `npm test` — Run unit tests (vitest, fake timers)
 - `cd server && uv run pytest` — 后端单元测试（pytest + respx stub JWKS）
 - `cd server && uv run uvicorn app.main:create_app --factory` — 本地启动后端（需先配好环境变量，见 `server/.env.example`）
-- *Git Worktree 依赖复用*: 新建 worktree 时可通过目录联接秒级复用主目录依赖：`cmd /c mklink /J node_modules <path-to-main-node_modules>`
+- *Git Worktree 依赖复用*: 新建 worktree 时可通过目录联接秒级复用主目录依赖：`cmd /c mklink /J node_modules <path-to-main-node_modules>`（注意：Windows 路径必须严格使用大写盘符如 `C:\...`，以保持与 Node 26 ESM 模块解析 URL 大小写一致，防止双重实例导致 Vitest 等工具状态丢失）
 
 ## Project Structure
 
@@ -53,8 +53,8 @@ server/            # 铲屎计数后端（FastAPI + SQLite + uv，Python）
 
 - CI triggers on git tags: 客户端 `v*`（如 `git tag v1.3.0 && git push --tags`），后端 `server-v*`（如 `git tag server-v1.0.0`）；两个 release job 经 `if: startsWith(github.ref, ...)` 互斥
 - Builds on Windows and Ubuntu; publishes to GitHub Releases automatically
-- Node.js version: 22
-- test.yml 两个并列 job：vitest（Node 22）+ server pytest（astral-sh/setup-uv，`cd server && uv run pytest`）
+- Node.js version: 26
+- test.yml 两个并列 job：vitest（Node 26）+ server pytest（astral-sh/setup-uv，`cd server && uv run pytest`）
 - release.yml 两个 job：`release`（客户端打包，仅 v* tag）+ `server-image`（仅 server-v* tag；docker/build-push-action 构建 `server/Dockerfile` 推 `ghcr.io/<repo-owner>/fish-server`，tag 为去掉 `server-` 前缀的版本号 + `latest`；构建前校验 tag 版本与 `server/pyproject.toml` 的 version 一致，不一致即 fail）
 - server 版本号唯一来源：`server/pyproject.toml` 的 `version` 字段；`GET /health` 返回 `{"status":"ok","version":"..."}`（tomllib 读 pyproject.toml，Docker 镜像里同样拷到项目根）
 - 客户端构建期注入（ADR 0004）：四个值存 GitHub repo **variables**（非 secrets）——`POCKET_ID_ISSUER`、`FISH_OIDC_CLIENT_ID`、`FISH_API_RESOURCE`、`FISH_API_BASE_URL`；release job 经 `env:` 传入，electron.vite.config.ts 的 main `define` 在构建期烧进 bundle（未设置则 `??` 落回 auth.ts/apiClient.ts 硬编码默认值；dev 模式由本地环境变量覆盖）
