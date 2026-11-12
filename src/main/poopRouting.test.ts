@@ -19,8 +19,7 @@ const {
     load: vi.fn(() => []),
     get: vi.fn(() => []),
     set: vi.fn((poops: unknown[]) => poops),
-    flush: vi.fn(),
-    resetForTesting: vi.fn()
+    flush: vi.fn()
   }
 
   const mockConfigStoreInstance = {
@@ -127,11 +126,7 @@ vi.mock('./tray-icon.png?inline', () => ({
 
 vi.mock('./poopStore', () => ({
   poopStore: mockPoopStore,
-  load: mockPoopStore.load,
-  get: mockPoopStore.get,
-  set: mockPoopStore.set,
-  flush: mockPoopStore.flush,
-  resetForTesting: mockPoopStore.resetForTesting
+  default: mockPoopStore
 }))
 
 vi.mock('./config', () => ({

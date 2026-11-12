@@ -3,9 +3,15 @@ import { dirname, join } from 'path'
 import type { Poop } from '../shared/config'
 
 export interface PoopStoreOptions {
+  /** 存储目录（用于自动推导 poops.json 与 config.json） */
+  storageDir?: string
+  /** 兼容别名 */
   customDir?: string
+  /** 显式指定 poops.json 路径 */
   poopPath?: string
+  /** 显式指定旧版 config.json 路径（用于迁移检测） */
   configPath?: string
+  /** 写盘去抖毫秒数，默认 500 */
   debounceMs?: number
 }
 
@@ -14,7 +20,6 @@ export interface PoopStore {
   get: () => Poop[]
   set: (poops: Poop[]) => Poop[]
   flush: () => void
-  resetForTesting: (dirOrOptions?: string | PoopStoreOptions) => void
 }
 
 function getDefaultUserDataDir(): string {
@@ -30,6 +35,18 @@ function getDefaultUserDataDir(): string {
   return ''
 }
 
+function resolveFilePath(
+  filename: string,
+  explicitPath?: string,
+  dir?: string,
+  fallbackDir?: string
+): string {
+  if (explicitPath) return explicitPath
+  if (dir) return join(dir, filename)
+  if (fallbackDir) return join(fallbackDir, filename)
+  return ''
+}
+
 export function createPoopStore(initialOptions?: PoopStoreOptions): PoopStore {
   let poopPath = ''
   let configPath = ''
@@ -39,47 +56,13 @@ export function createPoopStore(initialOptions?: PoopStoreOptions): PoopStore {
   let pendingTimer: ReturnType<typeof setTimeout> | null = null
 
   function resolvePaths(dirOrOptions?: string | PoopStoreOptions): void {
-    let customDir: string | undefined
-    let customPoopPath: string | undefined
-    let customConfigPath: string | undefined
-    let customDebounceMs: number | undefined
+    const opts = typeof dirOrOptions === 'string' ? { storageDir: dirOrOptions } : dirOrOptions
+    const targetDir = opts?.storageDir ?? opts?.customDir ?? initialOptions?.storageDir ?? initialOptions?.customDir
+    const fallbackDir = getDefaultUserDataDir()
 
-    if (typeof dirOrOptions === 'string') {
-      customDir = dirOrOptions
-    } else if (dirOrOptions && typeof dirOrOptions === 'object') {
-      customDir = dirOrOptions.customDir
-      customPoopPath = dirOrOptions.poopPath
-      customConfigPath = dirOrOptions.configPath
-      customDebounceMs = dirOrOptions.debounceMs
-    }
-
-    debounceMs = customDebounceMs ?? initialOptions?.debounceMs ?? 500
-
-    if (customPoopPath) {
-      poopPath = customPoopPath
-    } else if (customDir) {
-      poopPath = join(customDir, 'poops.json')
-    } else if (initialOptions?.poopPath) {
-      poopPath = initialOptions.poopPath
-    } else if (initialOptions?.customDir) {
-      poopPath = join(initialOptions.customDir, 'poops.json')
-    } else {
-      const userData = getDefaultUserDataDir()
-      poopPath = userData ? join(userData, 'poops.json') : ''
-    }
-
-    if (customConfigPath) {
-      configPath = customConfigPath
-    } else if (customDir) {
-      configPath = join(customDir, 'config.json')
-    } else if (initialOptions?.configPath) {
-      configPath = initialOptions.configPath
-    } else if (initialOptions?.customDir) {
-      configPath = join(initialOptions.customDir, 'config.json')
-    } else {
-      const userData = getDefaultUserDataDir()
-      configPath = userData ? join(userData, 'config.json') : ''
-    }
+    poopPath = resolveFilePath('poops.json', opts?.poopPath ?? initialOptions?.poopPath, targetDir, fallbackDir)
+    configPath = resolveFilePath('config.json', opts?.configPath ?? initialOptions?.configPath, targetDir, fallbackDir)
+    debounceMs = opts?.debounceMs ?? initialOptions?.debounceMs ?? 500
   }
 
   function readStoreFile(targetPath: string): Poop[] | null {
@@ -131,17 +114,23 @@ export function createPoopStore(initialOptions?: PoopStoreOptions): PoopStore {
     if (configPath && existsSync(configPath)) {
       try {
         const configRaw = JSON.parse(readFileSync(configPath, 'utf-8'))
-        if (Array.isArray(configRaw?.poops) && configRaw.poops.length > 0) {
-          memory = [...configRaw.poops]
-          // 立即持久化到 poops.json
-          persist(memory)
-          // 从 config.json 清理 poops 字段以避免冗余残留 (ADR / Issue #3)
+        if (configRaw && typeof configRaw === 'object' && 'poops' in configRaw) {
+          if (Array.isArray(configRaw.poops) && configRaw.poops.length > 0) {
+            memory = [...configRaw.poops]
+            // 立即持久化到 poops.json
+            persist(memory)
+          } else {
+            memory = []
+          }
+
+          // 无论数组是否为空，只要包含 poops 键，均清理旧 config 中的残留字段 (ADR / Issue #3)
           try {
             delete configRaw.poops
             writeFileSync(configPath, JSON.stringify(configRaw, null, 2), 'utf-8')
           } catch (cleanErr) {
             console.warn(`[poopStore] 清理旧版 ${configPath} 中的 poops 字段失败:`, cleanErr)
           }
+
           return memory
         }
       } catch (err) {
@@ -185,19 +174,6 @@ export function createPoopStore(initialOptions?: PoopStoreOptions): PoopStore {
     persist(memory)
   }
 
-  function resetForTesting(dirOrOptions?: string | PoopStoreOptions): void {
-    if (pendingTimer) {
-      clearTimeout(pendingTimer)
-      pendingTimer = null
-    }
-    resolvePaths(dirOrOptions)
-    memory = []
-    isLoaded = false
-    if (dirOrOptions !== undefined) {
-      load(dirOrOptions)
-    }
-  }
-
   // 初始化路径与首次加载
   resolvePaths(initialOptions)
   if (poopPath) {
@@ -208,19 +184,10 @@ export function createPoopStore(initialOptions?: PoopStoreOptions): PoopStore {
     load,
     get,
     set,
-    flush,
-    resetForTesting
+    flush
   }
 }
 
-const defaultStore = createPoopStore()
-
-export const load = defaultStore.load
-export const get = defaultStore.get
-export const set = defaultStore.set
-export const flush = defaultStore.flush
-export const resetForTesting = defaultStore.resetForTesting
-
-export const poopStore: PoopStore = defaultStore
+export const poopStore: PoopStore = createPoopStore()
 
 export default poopStore
