@@ -3,6 +3,7 @@ import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { createMenuModule } from './menu'
 import { createConfigStore, type ConfigStore } from './config'
+import { poopStore } from './poopStore'
 import { createAuthModule, type AuthModule } from './auth'
 import { createReporter, type Reporter } from './reporter'
 import { createApiClient, type ApiClient } from './apiClient'
@@ -173,11 +174,11 @@ ipcMain.on('set-always-on-top', (_event, enabled: boolean) => {
 })
 
 ipcMain.handle('get-poops', () => {
-  return configStore.get().poops
+  return poopStore.get()
 })
 
 ipcMain.on('set-poops', (_event, poops: Poop[]) => {
-  configStore.set({ poops })
+  poopStore.set(poops)
 })
 
 ipcMain.handle('set-work-end-time', (_event, time: string) => {
@@ -204,6 +205,9 @@ ipcMain.handle('get-leaderboard', () => apiClient.getLeaderboard())
 ipcMain.handle('set-show-on-leaderboard', (_event, show: boolean) => apiClient.setShowOnLeaderboard(show))
 
 app.whenReady().then(async () => {
+  // 排泄物存储：初始化并触发向下兼容迁移（userData 路径此时已可用）
+  poopStore.load()
+
   // 配置模块在 app 就绪后创建（userData 路径此时才可用）；
   // onChanged：配置同步的唯一缝隙，set 即广播完整 Config 给所有窗口
   configStore = createConfigStore({
@@ -214,7 +218,10 @@ app.whenReady().then(async () => {
       }
     }
   })
-  app.on('will-quit', () => configStore.flush())
+  app.on('will-quit', () => {
+    configStore.flush()
+    poopStore.flush()
+  })
 
   // auth 模块：token 经 safeStorage 加密存 userData/auth.json（独立于明文 config.json）
   auth = createAuthModule({
