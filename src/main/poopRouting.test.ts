@@ -32,8 +32,7 @@ const {
       autoLaunch: false,
       globalMouseTracking: true,
       skinId: 'default',
-      poopEnabled: true,
-      poops: [{ id: 'legacy-poop-in-config', x: 0, y: 0 }]
+      poopEnabled: true
     })),
     set: vi.fn(),
     flush: vi.fn()
@@ -184,7 +183,7 @@ describe('Main Process Poop IPC & Lifecycle Routing (#10)', () => {
     expect(ipcListeners.has('set-poops')).toBe(true)
   })
 
-  it('get-poops 路由至 poopStore.get()，不再读取 configStore.poops', async () => {
+  it('get-poops 路由至 poopStore.get()，不再读取 configStore', async () => {
     const samplePoops: Poop[] = [{ id: 'poop-1', x: 10, y: 20 }]
     mockPoopStore.get.mockReturnValue(samplePoops)
 
@@ -193,7 +192,7 @@ describe('Main Process Poop IPC & Lifecycle Routing (#10)', () => {
 
     expect(mockPoopStore.get).toHaveBeenCalledTimes(1)
     expect(result).toEqual(samplePoops)
-    expect(result).not.toEqual(mockConfigStoreInstance.get().poops)
+    expect(mockConfigStoreInstance.get).not.toHaveBeenCalled()
   })
 
   it('set-poops 路由至 poopStore.set()，且绝不调用 configStore.set()（解耦广播）', () => {
@@ -208,10 +207,8 @@ describe('Main Process Poop IPC & Lifecycle Routing (#10)', () => {
     expect(mockPoopStore.set).toHaveBeenCalledTimes(1)
     expect(mockPoopStore.set).toHaveBeenCalledWith(newPoops)
 
-    // 确保解耦广播通知：绝不调用 configStore.set({ poops })
-    expect(mockConfigStoreInstance.set).not.toHaveBeenCalledWith(
-      expect.objectContaining({ poops: expect.anything() })
-    )
+    // 确保解耦广播通知：绝不调用 configStore.set()
+    expect(mockConfigStoreInstance.set).not.toHaveBeenCalled()
   })
 
   it('应用就绪 app.whenReady() 时触发 poopStore.load()（初始化排泄物并触发兼容迁移）', async () => {

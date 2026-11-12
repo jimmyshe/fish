@@ -1,7 +1,7 @@
 import { fishCenter, type Vec } from './fishMotion'
 import type { FishPosition } from './fishPosition'
 
-// Poop 类型定义在 shared/config（三进程共用，config.poops 持久化用同一类型）
+// Poop 类型定义在 shared/config（三进程共用，poopStore 持久化用同一类型）
 import type { Poop } from '../../../shared/config'
 export type { Poop }
 

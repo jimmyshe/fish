@@ -83,20 +83,10 @@ describe('configStore', () => {
     expect(store.get().globalMouseTracking).toBe(true)
   })
 
-  it('旧配置缺 poopEnabled/poops：默认开启拉屎、屎列表为空', () => {
+  it('旧配置缺 poopEnabled：默认开启拉屎', () => {
     writeFileSync(configPath, JSON.stringify({ workEndTime: '19:00' }), 'utf-8')
     store = createConfigStore({ configPath })
     expect(store.get().poopEnabled).toBe(true)
-    expect(store.get().poops).toEqual([])
-  })
-
-  it('poops 持久化：set 后落盘，重开仍在', () => {
-    store = createConfigStore({ configPath, debounceMs: 500 })
-    const poops = [{ id: 'a', x: 100, y: 200 }]
-    store.set({ poops })
-    store.flush()
-    const saved = JSON.parse(readFileSync(configPath, 'utf-8'))
-    expect(saved.poops).toEqual(poops)
   })
 
   it('onChanged：每次 set 立即以完整 Config 触发（不经去抖），flush 不触发', () => {
