@@ -20,8 +20,6 @@ export interface Config {
   skinId: string
   /** 拉屎开关；关闭时停止定时排泄调度，已拉出的屎保留可铲 */
   poopEnabled: boolean
-  /** 已拉出的屎列表：无上限、不自动消失，重启后原位恢复 */
-  poops: Poop[]
 }
 
 export const DEFAULT_CONFIG: Config = {
@@ -32,6 +30,5 @@ export const DEFAULT_CONFIG: Config = {
   autoLaunch: false,
   globalMouseTracking: true,
   skinId: 'default',
-  poopEnabled: true,
-  poops: []
+  poopEnabled: true
 }
