@@ -742,5 +742,89 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
         expect(onShowMessage).not.toHaveBeenCalled()
       })
     })
+
+    describe('Ticket #8: Visual Shell Parity & State Exposure', () => {
+      it('exposes comboCount and updates subscribers upon combo increments and resets', () => {
+        const subscriber = vi.fn()
+        const engine = createPetEngine({ scheduler, autoStartTimers: false })
+        engine.subscribe(subscriber)
+
+        expect(engine.comboCount).toBe(0)
+
+        engine.handleClick()
+        expect(engine.comboCount).toBe(1)
+        expect(subscriber).toHaveBeenCalled()
+
+        engine.handleClick()
+        expect(engine.comboCount).toBe(2)
+
+        vi.advanceTimersByTime(3000)
+        expect(engine.comboCount).toBe(0)
+      })
+
+      it('exposes interactMessage and synchronizes with showMessage duration', () => {
+        const engine = createPetEngine({ scheduler, autoStartTimers: false })
+        expect(engine.interactMessage).toBe('')
+
+        engine.showMessage('测试消息', 1500)
+        expect(engine.interactMessage).toBe('测试消息')
+
+        vi.advanceTimersByTime(1000)
+        expect(engine.interactMessage).toBe('测试消息')
+
+        vi.advanceTimersByTime(500)
+        expect(engine.interactMessage).toBe('')
+      })
+
+      it('handleClick triggers tap message and heart particles when awake', () => {
+        const onShowMessage = vi.fn()
+        const onSpawnParticles = vi.fn()
+        const engine = createPetEngine({
+          scheduler,
+          adapter: { onShowMessage, onSpawnParticles },
+          autoStartTimers: false
+        })
+
+        engine.handleClick()
+        expect(onShowMessage).toHaveBeenCalledWith(
+          expect.stringMatching(/别戳我|嘿|干嘛呢|摸鱼中|好痒|咬你|嗷|手怎么这么凉|\(=｀ω´=\)|o\(\*￣▽￣\*\)o|在摸了/),
+          2000
+        )
+        expect(onSpawnParticles).toHaveBeenCalledWith(
+          ['❤️', '✨', '💕', '⭐', '💛', '💙'],
+          expect.any(Number),
+          'heart'
+        )
+      })
+
+      it('exposes mousePos from handleMouseActivity', () => {
+        const engine = createPetEngine({ scheduler, autoStartTimers: false })
+        expect(engine.mousePos).toEqual({ x: 0, y: 0 })
+
+        engine.handleMouseActivity(350, 420)
+        expect(engine.mousePos).toEqual({ x: 350, y: 420 })
+      })
+
+      it('notifies onFacingChange and onPoopsChange adapter callbacks', () => {
+        const onFacingChange = vi.fn()
+        const onPoopsChange = vi.fn()
+        const engine = createPetEngine({
+          scheduler,
+          adapter: { onFacingChange, onPoopsChange },
+          autoStartTimers: false
+        })
+
+        // Poop drop & scoop
+        engine.dropPoop()
+        expect(onPoopsChange).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({ id: expect.any(String) })]))
+
+        const poopId = engine.poops[0].id
+        engine.scoopPoop(poopId)
+        expect(onPoopsChange).toHaveBeenCalledWith([])
+
+        engine.setPoops([{ id: 'custom-1', x: 100, y: 100 }])
+        expect(onPoopsChange).toHaveBeenCalledWith([{ id: 'custom-1', x: 100, y: 100 }])
+      })
+    })
   })
 })

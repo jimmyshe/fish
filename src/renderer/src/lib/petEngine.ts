@@ -48,9 +48,11 @@ export interface BehaviorSnapshot {
 export interface PetEngineAdapter {
   getViewportSize?: () => { width: number; height: number }
   onFishPositionChange?: (pos: { x: number; y: number }) => void
+  onFacingChange?: (facingLeft: boolean) => void
   onPersistFishPosition?: (pos: { x: number; y: number }) => void
   onSetClickThrough?: (clickThrough: boolean) => void
   onPersistPoops?: (poops: Poop[]) => void
+  onPoopsChange?: (poops: Poop[]) => void
   onReportScoop?: () => void
   onDropPoop?: () => void
   onShowMessage?: (msg: string, duration?: number) => void
@@ -87,6 +89,19 @@ const SCARE_MESSAGES = ['呀！！', '不要过来！', '救命！', '太快了�
 const POOP_RELIEF_MESSAGES = ['舒服了', '别看', '……', '谁把灯打开']
 const SCOOP_MESSAGES = ['谢谢主人', '好人一生平安', '终于有人管了']
 const RAINBOW_MESSAGES = ['🌈 彩虹鱼出现了！！', '✨ 传说中的彩鱼！', '🎊 隐藏彩蛋解锁！']
+const TAP_MESSAGES = [
+  '别戳我！',
+  '嘿！',
+  '干嘛呢~',
+  '摸鱼中，勿扰',
+  '好痒啊！',
+  '再戳我就咬你！',
+  '(=｀ω´=)',
+  'o(*￣▽￣*)o',
+  '在摸了在摸了！',
+  '嗷！',
+  '你手怎么这么凉...'
+]
 const MONOLOGUES = [
   '今天的水怎么这么浑浊...',
   '鱼也要996吗？',
@@ -127,7 +142,7 @@ export class PetEngine {
   private _poops: Poop[] = []
   private clickThrough = true
 
-  private mousePos: Vec = { x: 0, y: 0 }
+  private _mousePos: Vec = { x: 0, y: 0 }
   private hasMouseData = false
   private lastMouseTime = 0
   private lastMouseClientPos: Vec = { x: 0, y: 0 }
@@ -142,6 +157,7 @@ export class PetEngine {
   }
   private lastTickAt = 0
   private hasInteractMessage = false
+  private _interactMessage = ''
 
   private currentSnapshot: BehaviorSnapshot
 
@@ -246,6 +262,18 @@ export class PetEngine {
 
   get isClickThrough(): boolean {
     return this.clickThrough
+  }
+
+  get comboCount(): number {
+    return this._comboCount
+  }
+
+  get interactMessage(): string {
+    return this._interactMessage
+  }
+
+  get mousePos(): Vec {
+    return this._mousePos
   }
 
   getViewportSize(): { width: number; height: number } {
@@ -353,7 +381,7 @@ export class PetEngine {
   // ── Mouse & Scared ──────────────────────────────────
 
   handleMouseActivity(x: number, y: number, now?: number): void {
-    this.mousePos = { x, y }
+    this._mousePos = { x, y }
     this.hasMouseData = true
     this.onActivity()
 
@@ -366,7 +394,7 @@ export class PetEngine {
       const c = fishCenter(this._fishPos)
       const dist = Math.hypot(x - c.x, y - c.y)
       if (shouldScare(speed, dist, MOTION.NEAR_RADIUS, MOTION.SCARE_SPEED)) {
-        const dashDir = dashDirection(c, this.mousePos)
+        const dashDir = dashDirection(c, this._mousePos)
         this.triggerScared(dashDir)
       }
     }
@@ -380,7 +408,7 @@ export class PetEngine {
 
     const dir =
       dashDir ??
-      dashDirection(fishCenter(this._fishPos), this.hasMouseData ? this.mousePos : null)
+      dashDirection(fishCenter(this._fishPos), this.hasMouseData ? this._mousePos : null)
     this.swimState.phase = 'dash'
     this.swimState.vx = dir.x * MOTION.DASH_SPEED
     this.swimState.vy = dir.y * MOTION.DASH_SPEED
@@ -428,7 +456,11 @@ export class PetEngine {
     if (this.swimState.phase === 'dash') {
       this.moveFishBy(this.swimState.vx * dt, this.swimState.vy * dt)
       const facing = computeFacing(this.swimState.vx, this._facingLeft ? -1 : 1, MOTION.FACE_DEADZONE)
-      this._facingLeft = facing === -1
+      const nextFacingLeft = facing === -1
+      if (this._facingLeft !== nextFacingLeft) {
+        this._facingLeft = nextFacingLeft
+        this.adapter.onFacingChange?.(nextFacingLeft)
+      }
 
       if (this.swimState.phaseLeftMs <= 0) {
         this.adapter.onPersistFishPosition?.(this._fishPos)
@@ -461,7 +493,7 @@ export class PetEngine {
       x: Math.cos(this.swimState.angle) * this.swimState.cruise,
       y: Math.sin(this.swimState.angle) * this.swimState.cruise
     }
-    const mouse = this.hasMouseData ? this.mousePos : null
+    const mouse = this.hasMouseData ? this._mousePos : null
     const viewport = this.getViewportSize()
     const vel = integrateVelocity(
       { x: this.swimState.vx, y: this.swimState.vy },
@@ -485,7 +517,11 @@ export class PetEngine {
     this.moveFishBy(vel.x * dt, vel.y * dt)
 
     const facing = computeFacing(this.swimState.vx, this._facingLeft ? -1 : 1, MOTION.FACE_DEADZONE)
-    this._facingLeft = facing === -1
+    const nextFacingLeft = facing === -1
+    if (this._facingLeft !== nextFacingLeft) {
+      this._facingLeft = nextFacingLeft
+      this.adapter.onFacingChange?.(nextFacingLeft)
+    }
   }
 
   // ── Sleep Mode ──────────────────────────────────────
@@ -521,9 +557,13 @@ export class PetEngine {
 
   showMessage(msg: string, duration = 2000): void {
     this.hasInteractMessage = true
+    this._interactMessage = msg
     this.adapter.onShowMessage?.(msg, duration)
+    this.tick()
     this.scheduler.after('interact', duration, () => {
       this.hasInteractMessage = false
+      this._interactMessage = ''
+      this.tick()
     })
   }
 
@@ -543,6 +583,18 @@ export class PetEngine {
   }
 
   handleClick(): void {
+    if (this._isDragging) {
+      this._isDragging = false
+    }
+    if (this._isSleeping) {
+      this.wakeUp()
+      return
+    }
+
+    const msg = TAP_MESSAGES[Math.floor(Math.random() * TAP_MESSAGES.length)]
+    this.showMessage(msg, 2000)
+    const count = 2 + Math.floor(Math.random() * 2)
+    this.adapter.onSpawnParticles?.(['❤️', '✨', '💕', '⭐', '💛', '💙'], count, 'heart')
     this.onActivity()
     this.addCombo()
   }
@@ -551,8 +603,10 @@ export class PetEngine {
 
   private addCombo(): void {
     this._comboCount++
+    this.tick()
     this.scheduler.after('combo', COMBO_WINDOW_MS, () => {
       this._comboCount = 0
+      this.tick()
     })
 
     if (this._comboCount >= 5) {
@@ -606,11 +660,13 @@ export class PetEngine {
     }
     this._poops = [...this._poops, newPoop]
     this.adapter.onDropPoop?.()
+    this.adapter.onPoopsChange?.(this._poops)
     this.adapter.onPersistPoops?.(this._poops)
   }
 
   scoopPoop(id: string): void {
     this._poops = this._poops.filter((p) => p.id !== id)
+    this.adapter.onPoopsChange?.(this._poops)
     this.adapter.onPersistPoops?.(this._poops)
     this.adapter.onReportScoop?.()
     const msg = SCOOP_MESSAGES[Math.floor(Math.random() * SCOOP_MESSAGES.length)]
@@ -620,6 +676,7 @@ export class PetEngine {
 
   setPoops(poops: Poop[]): void {
     this._poops = [...poops]
+    this.adapter.onPoopsChange?.(this._poops)
   }
 
   private schedulePoop(): void {

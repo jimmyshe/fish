@@ -1,0 +1,241 @@
+/* 游乐场：覆盖整个主屏的透明层，鱼的游动范围 */
+.playground {
+  position: fixed;
+  inset: 0;
+}
+
+.pet-wrapper {
+  width: 320px;
+  height: 200px;
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+/* ── 气泡 ── */
+.bubble-wrap {
+  position: absolute;
+  left: 0;
+  top: 10px;
+  width: 190px;
+  transition: opacity 0.5s;
+}
+.bubble-wrap.sleeping-bubble { opacity: 0.75; }
+
+.speech-bubble {
+  background: rgba(255,255,255,0.95);
+  border-radius: 16px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  position: relative;
+  backdrop-filter: blur(8px);
+  border: 2px solid rgba(255,255,255,0.8);
+  transition: all 0.4s ease;
+}
+.speech-bubble::after {
+  content: '';
+  position: absolute;
+  right: -14px; top: 50%;
+  transform: translateY(-50%);
+  border: 7px solid transparent;
+  border-left-color: rgba(255,255,255,0.95);
+}
+.speech-bubble.happy   { border-color: rgba(253,203,110,0.6); background: rgba(255,252,240,0.95); }
+.speech-bubble.nervous { border-color: rgba(253,121,168,0.6); background: rgba(255,245,248,0.95); }
+.speech-bubble.sad     { border-color: rgba(162,155,254,0.6); background: rgba(248,246,255,0.95); }
+.speech-bubble.scared  { border-color: rgba(255,118,117,0.7); background: rgba(255,245,243,0.95); }
+.speech-bubble.sleeping{ border-color: rgba(178,190,195,0.5); background: rgba(245,246,250,0.92); }
+.speech-bubble.water-alert {
+  border-color: rgba(116,185,255,0.8) !important;
+  background: rgba(236,246,255,0.97) !important;
+  animation: water-border-pulse 1.5s ease-in-out infinite;
+}
+@keyframes water-border-pulse {
+  0%,100% { box-shadow: 0 4px 16px rgba(0,0,0,0.15), 0 0 0 0 rgba(116,185,255,0.4); }
+  50%      { box-shadow: 0 4px 16px rgba(0,0,0,0.15), 0 0 0 6px rgba(116,185,255,0); }
+}
+
+.water-pulse {
+  animation: text-pop 1s ease-in-out infinite alternate;
+}
+
+.water-btn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 5px 0;
+  background: linear-gradient(135deg, #74b9ff, #0984e3);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+  transition: opacity 0.15s, transform 0.1s;
+  display: block;
+}
+.water-btn:hover  { opacity: 0.9; transform: scale(1.03); }
+.water-btn:active { transform: scale(0.97); }
+
+.bubble-text {
+  font-size: 15px; font-weight: 700; color: #2d3436;
+  white-space: nowrap;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+.bubble-subtext {
+  font-size: 11px; color: #636e72; margin-top: 3px;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+.interact-flash { animation: text-pop 0.2s ease-out; }
+@keyframes text-pop {
+  0%   { transform: scale(1); }
+  50%  { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+/* ── 粒子层 ── */
+.particles-layer {
+  position: absolute; inset: 0;
+  pointer-events: none; overflow: visible;
+}
+.particle {
+  position: absolute;
+  pointer-events: none;
+  animation: float-up linear forwards;
+}
+.particle.zzz {
+  animation: zzz-float ease-out forwards;
+  color: #636e72; font-style: italic; font-weight: bold;
+  font-family: 'Microsoft YaHei', sans-serif;
+}
+.particle.scare { animation: scare-pop ease-out forwards; }
+.particle.rainbow { animation: rainbow-float ease-out forwards; }
+
+@keyframes float-up {
+  0%   { opacity: 1;   transform: translateY(0) scale(1); }
+  80%  { opacity: 0.8; transform: translateY(-50px) scale(1.2); }
+  100% { opacity: 0;   transform: translateY(-70px) scale(0.8); }
+}
+@keyframes zzz-float {
+  0%   { opacity: 0;   transform: translateY(0) scale(0.6); }
+  20%  { opacity: 0.9; }
+  100% { opacity: 0;   transform: translateY(-40px) scale(1.2); }
+}
+@keyframes scare-pop {
+  0%   { opacity: 1; transform: translateY(0) scale(1.2) rotate(-10deg); }
+  100% { opacity: 0; transform: translateY(-35px) scale(0.8) rotate(10deg); }
+}
+@keyframes rainbow-float {
+  0%   { opacity: 1; transform: translateY(0) scale(1) rotate(0deg); }
+  100% { opacity: 0; transform: translateY(-60px) scale(1.4) rotate(20deg); }
+}
+
+/* ── 鱼 ── */
+.fish-wrap {
+  position: absolute; right: 0;
+  width: 140px; height: 100px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: grab;
+}
+.fish-wrap:active { cursor: grabbing; }
+
+/* 朝向：向左游时水平翻转（SVG 原图朝右）；徽章文字反向翻转避免镜像 */
+.fish-wrap.face-left { transform: scaleX(-1); }
+.fish-wrap.face-left .combo-badge { scale: -1 1; }
+
+.fish-svg {
+  width: 130px; height: 90px;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.2));
+  animation: swim 3s ease-in-out infinite;
+  transition: filter 0.3s ease;
+}
+
+/* 换皮肤时 body/tail/fin 平滑过渡 */
+.fish-svg polygon,
+.fish-svg ellipse {
+  transition: fill 0.3s ease;
+}
+
+/* 心情动画 */
+.fish-wrap.happy    .fish-svg { animation: swim-happy   2s   ease-in-out infinite; }
+.fish-wrap.nervous  .fish-svg { animation: swim-nervous 0.8s ease-in-out infinite; }
+.fish-wrap.sad      .fish-svg { animation: swim-sad     4s   ease-in-out infinite; }
+.fish-wrap.scared   .fish-svg { animation: swim-scared  0.1s ease-in-out infinite !important; filter: drop-shadow(0 0 8px rgba(255,100,80,0.6)); }
+.fish-wrap.sleeping .fish-svg { animation: swim-sleep   5s   ease-in-out infinite !important; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.1)) brightness(0.85); }
+
+/* 悬停 */
+.fish-wrap.is-hovered:not(.scared):not(.sleeping) .fish-svg {
+  animation: swim-excited 0.6s ease-in-out infinite !important;
+  filter: drop-shadow(0 4px 16px rgba(255,200,80,0.8));
+  cursor: pointer;
+}
+
+/* 彩虹模式 */
+.fish-wrap.is-rainbow .fish-svg {
+  animation: swim-happy 1s ease-in-out infinite, rainbow-hue 0.6s linear infinite !important;
+}
+
+@keyframes swim         { 0%,100%{transform:translateY(0) rotate(-3deg)} 50%{transform:translateY(-10px) rotate(3deg)} }
+@keyframes swim-happy   { 0%,100%{transform:translateY(0) rotate(-5deg) scale(1)} 25%{transform:translateY(-12px) rotate(5deg) scale(1.02)} 75%{transform:translateY(-6px) rotate(-2deg) scale(1.01)} }
+@keyframes swim-nervous { 0%,100%{transform:translateY(0) rotate(-2deg)} 50%{transform:translateY(-4px) rotate(2deg)} }
+@keyframes swim-sad     { 0%,100%{transform:translateY(0) rotate(-1deg)} 50%{transform:translateY(-5px) rotate(1deg)} }
+@keyframes swim-scared  { 0%,100%{transform:translateX(0) rotate(0deg) scale(1.05)} 25%{transform:translateX(-4px) rotate(-4deg) scale(1.08)} 75%{transform:translateX(4px) rotate(4deg) scale(1.08)} }
+@keyframes swim-sleep   { 0%,100%{transform:translateY(0) rotate(-1deg)} 50%{transform:translateY(-3px) rotate(1deg)} }
+@keyframes swim-excited { 0%,100%{transform:translateY(0) rotate(-6deg) scale(1.05)} 50%{transform:translateY(-10px) rotate(6deg) scale(1.1)} }
+@keyframes rainbow-hue  { from{filter:drop-shadow(0 4px 12px rgba(255,0,0,0.5)) hue-rotate(0deg)} to{filter:drop-shadow(0 4px 12px rgba(255,0,0,0.5)) hue-rotate(360deg)} }
+
+/* 鱼尾 */
+.fish-tail { transform-origin: 18px 40px; animation: wag 0.8s ease-in-out infinite; }
+@keyframes wag { 0%,100%{transform:skewY(5deg)} 50%{transform:skewY(-5deg)} }
+
+/* 泪/汗/受惊 */
+.tear       { animation: drip 1.5s ease-in infinite; }
+.tear2      { animation-delay: 0.5s; }
+.sweat      { animation: sweat-drop 1s ease-in infinite; }
+@keyframes drip       { 0%{opacity:.8;transform:translateY(0)} 100%{opacity:0;transform:translateY(15px)} }
+@keyframes sweat-drop { 0%{opacity:0;transform:translateY(-5px)} 50%{opacity:.9} 100%{opacity:0;transform:translateY(10px)} }
+
+/* 连击徽章 */
+.combo-badge {
+  position: absolute;
+  bottom: -8px; left: 50%; transform: translateX(-50%);
+  background: linear-gradient(135deg, #fd79a8, #e17055);
+  color: white;
+  font-size: 10px; font-weight: 800;
+  padding: 2px 8px;
+  border-radius: 10px;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(253,121,168,0.5);
+  animation: badge-pulse 0.4s ease-in-out infinite alternate;
+  font-family: 'Microsoft YaHei', sans-serif;
+}
+@keyframes badge-pulse { from{transform:translateX(-50%) scale(1)} to{transform:translateX(-50%) scale(1.1)} }
+
+/* ── 拉屎 ── */
+/* 使劲动画：抖动 + 轻微下压，约 800ms 一次 */
+.fish-wrap.is-pooping .fish-svg {
+  animation: poop-push 0.8s ease-in-out !important;
+}
+@keyframes poop-push {
+  0%,100% { transform: translateY(0) scale(1); }
+  20%     { transform: translateY(2px) scale(1.04, 0.94) rotate(-2deg); }
+  40%     { transform: translateY(-2px) scale(0.98, 1.04) rotate(2deg); }
+  60%     { transform: translateY(3px) scale(1.06, 0.92); }
+  80%     { transform: translateY(-1px) scale(0.99, 1.02) rotate(-1deg); }
+}
+
+/* 屎：视口坐标绝对定位；padding 让点击热区略大于视觉尺寸 */
+.poop {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  font-size: 22px;
+  padding: 8px;
+  cursor: pointer;
+  user-select: none;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.25));
+  transition: transform 0.15s ease;
+}
+.poop:hover { transform: translate(-50%, -50%) scale(1.15); }
