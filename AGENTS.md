@@ -8,6 +8,7 @@
 - `npm run check` — 静态检查全套（`npm run typecheck && npm run check:timers`）
 - `npm run typecheck` — 运行 vue-tsc 类型检查（`vue-tsc --noEmit`）
 - `npm run check:timers` — 检查渲染层禁止裸调 setTimeout/setInterval 规则
+- `npm run generate:icons` — 生成全套应用图标（Windows .ico、Linux .png、托盘与窗口图标）
 - `npm test` — Run unit tests (vitest, fake timers)
 - `cd server && uv run pytest` — 后端单元测试（pytest + respx stub JWKS）
 - `cd server && uv run uvicorn app.main:create_app --factory` — 本地启动后端（需先配好环境变量，见 `server/.env.example`）

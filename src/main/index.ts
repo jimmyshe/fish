@@ -12,6 +12,7 @@ import { startAlwaysOnTopWatchdog } from './alwaysOnTop'
 import type { Config, Poop } from '../shared/config'
 import type { MainPanelTab } from '../shared/api'
 import trayIconUrl from './tray-icon.png?inline'
+import appIconUrl from './app-icon.png?inline'
 
 let configStore: ConfigStore
 let auth: AuthModule
@@ -20,6 +21,14 @@ let apiClient: ApiClient
 let mainWindow: BrowserWindow | null = null
 let mainPanelWindow: BrowserWindow | null = null
 let tray: Tray | null = null
+let appIcon: nativeImage.NativeImage | null = null
+
+function getAppIcon(): nativeImage.NativeImage {
+  if (!appIcon) {
+    appIcon = nativeImage.createFromDataURL(appIconUrl)
+  }
+  return appIcon
+}
 
 /** 按配置开关即时 start/stop 全局鼠标钩子 */
 function applyGlobalMouseTracking(enabled: boolean): void {
@@ -59,6 +68,7 @@ function openMainPanel(tab: MainPanelTab): void {
   mainPanelWindow = new BrowserWindow({
     width: 440,
     height: 620,
+    icon: getAppIcon(),
     autoHideMenuBar: true,
     resizable: false,
     webPreferences: {
@@ -98,6 +108,7 @@ function createWindow(): void {
     resizable: false,
     hasShadow: false,
     focusable: false,
+    icon: getAppIcon(),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,

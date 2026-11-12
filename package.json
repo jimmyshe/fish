@@ -23,12 +23,14 @@
       "output": "dist_electron"
     },
     "win": {
+      "icon": "build/icon.ico",
       "target": [
         "nsis",
         "zip"
       ]
     },
     "linux": {
+      "icon": "build/icon.png",
       "target": [
         "AppImage",
         "deb"
@@ -45,7 +47,8 @@
     "typecheck": "vue-tsc --noEmit",
     "check:timers": "node scripts/check-timers.mjs",
     "check": "npm run typecheck && npm run check:timers",
-    "generate:tray-icon": "node scripts/generate-tray-icon.mjs"
+    "generate:icons": "node scripts/generate-icons.mjs",
+    "generate:tray-icon": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.1",
