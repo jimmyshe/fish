@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { PetEngine, createPetEngine } from './petEngine'
+import { PetEngine, createPetEngine, createRoamingAction } from './petEngine'
 import { PetScheduler } from '../composables/PetScheduler'
 
 describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
@@ -30,6 +30,23 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
         isRainbow: false,
         showWaterReminder: false,
       })
+    })
+
+    it('roamingAction and steady-state roaming evaluate to RUNNING', () => {
+      const engine = createPetEngine({ scheduler })
+      expect(engine.evaluateTree()).toBe('RUNNING')
+
+      // createRoamingAction directly
+      const roamingAction = createRoamingAction()
+      const ctx = {
+        isDragging: false,
+        isScared: false,
+        isSleeping: false,
+        isPooping: false,
+        currentAction: 'roaming' as const,
+        movementIntent: 'roam' as const
+      }
+      expect(roamingAction(ctx)).toBe('RUNNING')
     })
 
     it('dragging pre-empts roaming and endDrag restores roaming', () => {
@@ -343,6 +360,50 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
       // 2 minutes later still awake
       vi.advanceTimersByTime(2 * 60 * 1000)
       expect(engine.getSnapshot().isSleeping).toBe(false)
+    })
+
+    it('fast mouse activity during sleep triggers scare, waking up fish', () => {
+      const onSpawnParticles = vi.fn()
+      const onShowMessage = vi.fn()
+      const engine = createPetEngine({
+        scheduler,
+        adapter: { onSpawnParticles, onShowMessage },
+        initialFishPos: { x: 300, y: 300 },
+        autoStartTimers: false
+      })
+
+      // Put pet to sleep
+      engine.fallAsleep()
+      expect(engine.getSnapshot().isSleeping).toBe(true)
+      expect(engine.getSnapshot().currentAction).toBe('sleeping')
+
+      // Clear initial particle calls
+      onSpawnParticles.mockClear()
+
+      // Fish center: (460, 400). Move mouse fast near fish: (400, 400) -> 10ms later (450, 400)
+      engine.handleMouseActivity(400, 400, 1000)
+      engine.handleMouseActivity(450, 400, 1010)
+
+      // Fish wakes up into scared state
+      expect(engine.getSnapshot().isSleeping).toBe(false)
+      expect(engine.getSnapshot().isScared).toBe(true)
+      expect(engine.getSnapshot().currentAction).toBe('scared')
+      expect(engine.getSnapshot().movementIntent).toBe('dash')
+      expect(onShowMessage).toHaveBeenCalledWith(
+        expect.stringMatching(/呀！！|不要过来！|救命！|太快了！|\(ﾟДﾟ\)！/),
+        1500
+      )
+
+      // Verify zzz timer was cancelled: advance by 1500ms -> no Zzz particles
+      onSpawnParticles.mockClear()
+      vi.advanceTimersByTime(1500)
+      expect(onSpawnParticles).not.toHaveBeenCalledWith(['z', 'Z', 'z'], 1, 'zzz')
+
+      // Advance scared duration (1800ms total from scare) -> recovers to roaming
+      vi.advanceTimersByTime(300)
+      expect(engine.getSnapshot().isScared).toBe(false)
+      expect(engine.getSnapshot().isSleeping).toBe(false)
+      expect(engine.getSnapshot().currentAction).toBe('roaming')
     })
   })
 

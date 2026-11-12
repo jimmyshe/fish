@@ -68,15 +68,15 @@
         <!-- 眼睛白色 -->
         <circle cx="84" cy="34" r="8" fill="white" />
 
-        <!-- 眼睛：睡着时闭眼，受惊时瞪眼，平时跟随鼠标 -->
-        <template v-if="isSleeping">
-          <!-- 闭眼：横线 -->
-          <path d="M 80 34 Q 84 37 88 34" stroke="#1a1a2e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
-        </template>
-        <template v-else-if="isScared">
+        <!-- 眼睛：受惊时瞪眼，睡着时闭眼，平时跟随鼠标 -->
+        <template v-if="isScared">
           <!-- 受惊：瞪大眼 + 竖形瞳孔 -->
           <ellipse :cx="eyeX" :cy="eyeY" rx="3" ry="5" fill="#1a1a2e" />
           <circle :cx="eyeHighlightX" :cy="eyeHighlightY" r="1.5" fill="white" />
+        </template>
+        <template v-else-if="isSleeping">
+          <!-- 闭眼：横线 -->
+          <path d="M 80 34 Q 84 37 88 34" stroke="#1a1a2e" stroke-width="2.5" fill="none" stroke-linecap="round"/>
         </template>
         <template v-else>
           <!-- 正常：圆形瞳孔跟随鼠标 -->

@@ -105,4 +105,17 @@ describe('usePetEngine Composable (Ticket #8)', () => {
   it('hitInteractiveAt handles environments without document gracefully', () => {
     expect(hitInteractiveAt(100, 100)).toBe(false)
   })
+
+  it('manages particles lifecycle via PetScheduler', () => {
+    const { engine, particles } = usePetEngine({ scheduler })
+
+    expect(particles.value.length).toBe(0)
+    // Click pet triggers spawnParticles via engine adapter
+    engine.handleClick()
+    expect(particles.value.length).toBeGreaterThan(0)
+
+    // Advance fake timers by 2000ms (dur is 0.8~1.5s + 150ms)
+    vi.advanceTimersByTime(2000)
+    expect(particles.value.length).toBe(0)
+  })
 })

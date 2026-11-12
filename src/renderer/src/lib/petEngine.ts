@@ -4,7 +4,8 @@ import {
   condition,
   prioritySelector,
   sequence,
-  type BehaviorNode
+  type BehaviorNode,
+  type NodeStatus
 } from './behaviorTree'
 import { clampFishPosition, resolveInitialFishPosition } from './fishPosition'
 import {
@@ -68,13 +69,69 @@ export interface PetEngineOptions {
   initialPoops?: Poop[]
 }
 
-interface TreeContext {
+export interface TreeContext {
   isDragging: boolean
   isScared: boolean
   isSleeping: boolean
   isPooping: boolean
   currentAction: PetActionName
   movementIntent: MovementIntent
+}
+
+export function createRoamingAction(): BehaviorNode<TreeContext> {
+  return action<TreeContext>((ctx) => {
+    ctx.currentAction = 'roaming'
+    ctx.movementIntent = 'roam'
+    return 'RUNNING'
+  })
+}
+
+export function createPetBehaviorTree(): BehaviorNode<TreeContext> {
+  const draggingAction = sequence<TreeContext>([
+    condition((ctx) => ctx.isDragging),
+    action((ctx) => {
+      ctx.currentAction = 'dragging'
+      ctx.movementIntent = 'user-drag'
+      return 'SUCCESS'
+    })
+  ])
+
+  const scaredDashAction = sequence<TreeContext>([
+    condition((ctx) => ctx.isScared),
+    action((ctx) => {
+      ctx.currentAction = 'scared'
+      ctx.movementIntent = 'dash'
+      return 'SUCCESS'
+    })
+  ])
+
+  const sleepingAction = sequence<TreeContext>([
+    condition((ctx) => ctx.isSleeping),
+    action((ctx) => {
+      ctx.currentAction = 'sleeping'
+      ctx.movementIntent = 'paused'
+      return 'SUCCESS'
+    })
+  ])
+
+  const poopStrainingSequence = sequence<TreeContext>([
+    condition((ctx) => ctx.isPooping),
+    action((ctx) => {
+      ctx.currentAction = 'pooping'
+      ctx.movementIntent = 'paused'
+      return 'SUCCESS'
+    })
+  ])
+
+  const roamingAction = createRoamingAction()
+
+  return prioritySelector<TreeContext>([
+    draggingAction,
+    scaredDashAction,
+    sleepingAction,
+    poopStrainingSequence,
+    roamingAction
+  ])
 }
 
 const SLEEP_TIMEOUT_MS = 3 * 60 * 1000 // 3 min
@@ -175,57 +232,7 @@ export class PetEngine {
       viewport.height
     )
 
-    // Build the 5-level Root PrioritySelector:
-    // DraggingAction > ScaredDashAction > SleepingAction > PoopStrainingSequence > RoamingAction
-    const draggingAction = sequence<TreeContext>([
-      condition((ctx) => ctx.isDragging),
-      action((ctx) => {
-        ctx.currentAction = 'dragging'
-        ctx.movementIntent = 'user-drag'
-        return 'SUCCESS'
-      })
-    ])
-
-    const scaredDashAction = sequence<TreeContext>([
-      condition((ctx) => ctx.isScared),
-      action((ctx) => {
-        ctx.currentAction = 'scared'
-        ctx.movementIntent = 'dash'
-        return 'SUCCESS'
-      })
-    ])
-
-    const sleepingAction = sequence<TreeContext>([
-      condition((ctx) => ctx.isSleeping),
-      action((ctx) => {
-        ctx.currentAction = 'sleeping'
-        ctx.movementIntent = 'paused'
-        return 'SUCCESS'
-      })
-    ])
-
-    const poopStrainingSequence = sequence<TreeContext>([
-      condition((ctx) => ctx.isPooping),
-      action((ctx) => {
-        ctx.currentAction = 'pooping'
-        ctx.movementIntent = 'paused'
-        return 'SUCCESS'
-      })
-    ])
-
-    const roamingAction = action<TreeContext>((ctx) => {
-      ctx.currentAction = 'roaming'
-      ctx.movementIntent = 'roam'
-      return 'SUCCESS'
-    })
-
-    this.rootTree = prioritySelector<TreeContext>([
-      draggingAction,
-      scaredDashAction,
-      sleepingAction,
-      poopStrainingSequence,
-      roamingAction
-    ])
+    this.rootTree = createPetBehaviorTree()
 
     this.currentSnapshot = this.evaluateSnapshot()
 
@@ -322,6 +329,19 @@ export class PetEngine {
     }
   }
 
+  evaluateTree(customCtx?: Partial<TreeContext>): NodeStatus {
+    const ctx: TreeContext = {
+      isDragging: this._isDragging,
+      isScared: this._isScared,
+      isSleeping: this._isSleeping,
+      isPooping: this._isPooping,
+      currentAction: 'roaming',
+      movementIntent: 'roam',
+      ...customCtx
+    }
+    return this.rootTree(ctx)
+  }
+
   private evaluateSnapshot(): BehaviorSnapshot {
     const ctx: TreeContext = {
       isDragging: this._isDragging,
@@ -383,11 +403,10 @@ export class PetEngine {
   handleMouseActivity(x: number, y: number, now?: number): void {
     this._mousePos = { x, y }
     this.hasMouseData = true
-    this.onActivity()
 
     const currentNow = now ?? Date.now()
     const dt = currentNow - this.lastMouseTime
-    if (dt > 0 && dt < 80 && !this._isScared && !this._isSleeping) {
+    if (dt > 0 && dt < 80 && !this._isScared) {
       const dx = x - this.lastMouseClientPos.x
       const dy = y - this.lastMouseClientPos.y
       const speed = Math.hypot(dx, dy) / dt
@@ -400,11 +419,21 @@ export class PetEngine {
     }
     this.lastMouseTime = currentNow
     this.lastMouseClientPos = { x, y }
+
+    if (!this._isSleeping) {
+      this.onActivity()
+    }
   }
 
   triggerScared(dashDir?: Vec): void {
     if (this._isScared) return
     this._isScared = true
+
+    if (this._isSleeping) {
+      this.scheduler.cancel('zzz')
+      this._isSleeping = false
+      this.resetSleepTimer()
+    }
 
     const dir =
       dashDir ??
@@ -437,6 +466,15 @@ export class PetEngine {
 
   // ── Physics & Steering ──────────────────────────────
 
+  private updateFacing(vx: number): void {
+    const facing = computeFacing(vx, this._facingLeft ? -1 : 1, MOTION.FACE_DEADZONE)
+    const nextFacingLeft = facing === -1
+    if (this._facingLeft !== nextFacingLeft) {
+      this._facingLeft = nextFacingLeft
+      this.adapter.onFacingChange?.(nextFacingLeft)
+    }
+  }
+
   swimTick(now?: number): void {
     const currentNow = now ?? Date.now()
     if (this.lastTickAt === 0) {
@@ -455,12 +493,7 @@ export class PetEngine {
 
     if (this.swimState.phase === 'dash') {
       this.moveFishBy(this.swimState.vx * dt, this.swimState.vy * dt)
-      const facing = computeFacing(this.swimState.vx, this._facingLeft ? -1 : 1, MOTION.FACE_DEADZONE)
-      const nextFacingLeft = facing === -1
-      if (this._facingLeft !== nextFacingLeft) {
-        this._facingLeft = nextFacingLeft
-        this.adapter.onFacingChange?.(nextFacingLeft)
-      }
+      this.updateFacing(this.swimState.vx)
 
       if (this.swimState.phaseLeftMs <= 0) {
         this.adapter.onPersistFishPosition?.(this._fishPos)
@@ -516,12 +549,7 @@ export class PetEngine {
     this.swimState.vy = vel.y
     this.moveFishBy(vel.x * dt, vel.y * dt)
 
-    const facing = computeFacing(this.swimState.vx, this._facingLeft ? -1 : 1, MOTION.FACE_DEADZONE)
-    const nextFacingLeft = facing === -1
-    if (this._facingLeft !== nextFacingLeft) {
-      this._facingLeft = nextFacingLeft
-      this.adapter.onFacingChange?.(nextFacingLeft)
-    }
+    this.updateFacing(this.swimState.vx)
   }
 
   // ── Sleep Mode ──────────────────────────────────────

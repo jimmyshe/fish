@@ -1,5 +1,6 @@
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { createPetEngine, PetEngine, type BehaviorSnapshot } from '../lib/petEngine'
+import { PetScheduler } from './PetScheduler'
 import { petTime } from '../lib/petTime'
 import { resolveSkin } from '../lib/skins'
 import { resolveInitialFishPosition } from '../lib/fishPosition'
@@ -19,6 +20,7 @@ export interface Particle {
 
 export interface UsePetEngineOptions {
   engine?: PetEngine
+  scheduler?: PetScheduler
 }
 
 const INTERACTIVE_SELECTOR = '.fish-wrap, .bubble-wrap, .poop'
@@ -30,6 +32,7 @@ export function hitInteractiveAt(x: number, y: number): boolean {
 }
 
 export function usePetEngine(options: UsePetEngineOptions = {}) {
+  const scheduler = options.scheduler ?? new PetScheduler()
   const particles = ref<Particle[]>([])
   let particleId = 0
 
@@ -47,9 +50,9 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         type
       }
       particles.value.push(p)
-      setTimeout(() => {
+      scheduler.after(`particle:${id}`, dur * 1000 + 150, () => {
         particles.value = particles.value.filter((x) => x.id !== id)
-      }, dur * 1000 + 150)
+      })
     }
   }
 
@@ -245,7 +248,6 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
 
   // Lifecycle
   const unsubscribeGlobal: Array<() => void> = []
-  let clockTimer: ReturnType<typeof setInterval> | null = null
 
   if (getCurrentInstance()) {
     onMounted(async () => {
@@ -308,9 +310,9 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         window.addEventListener('beforeunload', persistFishPosition)
       }
 
-      clockTimer = setInterval(() => {
+      scheduler.every('clock', 10000, () => {
         currentTime.value = new Date()
-      }, 10000)
+      })
     })
 
     onUnmounted(() => {
@@ -321,7 +323,7 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         window.removeEventListener('beforeunload', persistFishPosition)
       }
       unsubscribeGlobal.forEach((off) => off())
-      if (clockTimer) clearInterval(clockTimer)
+      scheduler.cancelAll()
       unsubEngine()
       if (!options.engine) {
         engine.destroy()
@@ -331,6 +333,7 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
 
   return {
     engine,
+    scheduler,
     fishPos,
     fishStyle,
     facingLeft,
