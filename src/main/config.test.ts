@@ -110,4 +110,20 @@ describe('configStore', () => {
     store = createConfigStore({ configPath, debounceMs: 500 })
     expect(() => store.set({ workEndTime: '17:30' })).not.toThrow()
   })
+
+  it('旧配置含 skinId：自动迁移至 speciesId 与 paletteId (ADR 0008)', () => {
+    writeFileSync(configPath, JSON.stringify({ skinId: 'sakura' }), 'utf-8')
+    store = createConfigStore({ configPath })
+    const cfg = store.get()
+    expect(cfg.speciesId).toBe('classic-fish')
+    expect(cfg.paletteId).toBe('sakura')
+    expect(cfg.skinId).toBe('sakura')
+  })
+
+  it('set paletteId：自动同步更新 skinId', () => {
+    store = createConfigStore({ configPath })
+    const updated = store.set({ paletteId: 'koi' })
+    expect(updated.paletteId).toBe('koi')
+    expect(updated.skinId).toBe('koi')
+  })
 })

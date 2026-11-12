@@ -31,19 +31,46 @@
       <span>📌 窗口置顶</span>
       <input v-model="alwaysOnTop" type="checkbox" @change="onAlwaysOnTopChange" />
     </label>
-    <div class="form-row">
-      <span>🎨 皮肤：{{ currentSkin.name }}</span>
-      <div class="skin-picker">
+
+    <!-- 第一层：物种选择（ADR 0008） -->
+    <div class="form-row species-row">
+      <span>🐾 物种：{{ currentSpecies.name }}</span>
+      <div class="species-picker">
         <button
-          v-for="skin in SKINS"
-          :key="skin.id"
+          v-for="species in SPECIES_LIST"
+          :key="species.id"
           type="button"
-          class="skin-swatch"
-          :class="{ active: currentSkin.id === skin.id }"
-          :style="{ background: skin.palette.normal.body }"
-          :title="skin.name"
-          @click="onSkinChange(skin.id)"
-        ></button>
+          class="species-pill"
+          :class="{ active: currentSpecies.id === species.id }"
+          @click="onSpeciesChange(species.id)"
+        >
+          <span>{{ species.icon }}</span>
+          <span>{{ species.name }}</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- 第二层：调色方案选择（ADR 0008） -->
+    <div class="form-row">
+      <span>🎨 调色：{{ currentPalette.name }}</span>
+      <div class="palette-picker">
+        <template v-if="currentSpecies.palettes.length > 0">
+          <button
+            v-for="p in currentSpecies.palettes"
+            :key="p.id"
+            type="button"
+            class="skin-swatch"
+            :class="{ active: currentPalette.id === p.id }"
+            :style="{ background: p.previewColor }"
+            :title="p.name"
+            @click="onPaletteChange(p.id)"
+          ></button>
+        </template>
+        <template v-else>
+          <span class="custom-note" :style="{ color: currentSpecies.previewColor }">
+            专属原色
+          </span>
+        </template>
       </div>
     </div>
   </div>
@@ -52,7 +79,7 @@
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Config } from '../../../shared/config'
-import { resolveSkin, SKINS } from '../lib/skins'
+import { SPECIES_LIST, resolveSpecies, resolvePalette } from '../lib/species'
 
 const workEndTime = ref('18:00')
 const workEndReminderEnabled = ref(true)
@@ -61,9 +88,13 @@ const globalMouseTracking = ref(true)
 const autoLaunch = ref(false)
 // 置顶不持久化（默认开启）：走独立的 get/set IPC，不在 config 广播里
 const alwaysOnTop = ref(true)
-// 皮肤：未知 id 经 resolveSkin 回退默认（与 DesktopPet 渲染侧同一回退点）
-const skinId = ref('default')
-const currentSkin = computed(() => resolveSkin(skinId.value))
+
+// 物种与调色方案（ADR 0008 二层解耦）
+const speciesId = ref('classic-fish')
+const paletteId = ref('default')
+
+const currentSpecies = computed(() => resolveSpecies(speciesId.value))
+const currentPalette = computed(() => resolvePalette(currentSpecies.value, paletteId.value))
 
 function applyConfig(config: Config): void {
   workEndTime.value = config.workEndTime
@@ -71,7 +102,8 @@ function applyConfig(config: Config): void {
   poopEnabled.value = config.poopEnabled
   globalMouseTracking.value = config.globalMouseTracking
   autoLaunch.value = config.autoLaunch
-  skinId.value = config.skinId
+  speciesId.value = config.speciesId ?? 'classic-fish'
+  paletteId.value = config.paletteId ?? config.skinId ?? 'default'
 }
 
 let unsubscribeConfig: (() => void) | null = null
@@ -111,8 +143,21 @@ function onAlwaysOnTopChange(): void {
   if (window.api) window.api.setAlwaysOnTop(alwaysOnTop.value)
 }
 
-function onSkinChange(id: string): void {
-  if (window.api) void window.api.setSkinId(id)
+function onSpeciesChange(newSpeciesId: string): void {
+  speciesId.value = newSpeciesId
+  const sp = resolveSpecies(newSpeciesId)
+  paletteId.value = sp.defaultPaletteId
+  if (window.api) {
+    void window.api.setSpeciesId(newSpeciesId)
+    void window.api.setPaletteId(sp.defaultPaletteId)
+  }
+}
+
+function onPaletteChange(newPaletteId: string): void {
+  paletteId.value = newPaletteId
+  if (window.api) {
+    void window.api.setPaletteId(newPaletteId)
+  }
 }
 </script>
 
@@ -129,10 +174,40 @@ function onSkinChange(id: string): void {
 }
 .time-input:focus { border-color: #0984e3; }
 
-/* 皮肤色板：代表色 = normal 心情 body 色（所见即所得） */
-.skin-picker {
+/* 物种药丸选择器 */
+.species-picker {
+  display: flex;
+  gap: 8px;
+}
+.species-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1.5px solid #dfe6e9;
+  background: #f8f9fa;
+  font-size: 13px;
+  color: #2d3436;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.species-pill:hover {
+  border-color: #74b9ff;
+  background: #f0f7ff;
+}
+.species-pill.active {
+  border-color: #0984e3;
+  background: #e8f4fd;
+  color: #0984e3;
+  font-weight: 600;
+}
+
+/* 调色板选择器：代表色 = normal 心情 body 色（所见即所得） */
+.palette-picker {
   display: flex;
   gap: 6px;
+  align-items: center;
 }
 .skin-swatch {
   width: 22px;
@@ -145,4 +220,9 @@ function onSkinChange(id: string): void {
 }
 .skin-swatch:hover { transform: scale(1.15); }
 .skin-swatch.active { border-color: #0984e3; transform: scale(1.15); }
+
+.custom-note {
+  font-size: 12px;
+  font-weight: 600;
+}
 </style>

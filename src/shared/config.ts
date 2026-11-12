@@ -16,7 +16,11 @@ export interface Config {
   autoLaunch: boolean
   /** 全局鼠标追踪开关；关闭时原生钩子完全停止 */
   globalMouseTracking: boolean
-  /** 皮肤 id：具名调色板（注册表归 renderer 属主，ADR 0006）；主进程不透明持久化，未知值渲染时回退默认皮肤 */
+  /** 宠物物种 id：决定模型组件形态（默认 'classic-fish'，ADR 0008） */
+  speciesId: string
+  /** 调色方案 id：物种下的具名配色（默认 'default'，ADR 0008） */
+  paletteId: string
+  /** 皮肤 id：具名调色板（兼容老版本字段，等价于 paletteId）；未知值渲染时回退默认皮肤 */
   skinId: string
   /** 拉屎开关；关闭时停止定时排泄调度，已拉出的屎保留可铲 */
   poopEnabled: boolean
@@ -29,6 +33,8 @@ export const DEFAULT_CONFIG: Config = {
   windowY: -1,
   autoLaunch: false,
   globalMouseTracking: true,
+  speciesId: 'classic-fish',
+  paletteId: 'default',
   skinId: 'default',
   poopEnabled: true
 }

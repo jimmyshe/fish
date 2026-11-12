@@ -3,6 +3,11 @@ import { createPetEngine, PetEngine, type BehaviorSnapshot } from '../lib/petEng
 import { PetScheduler } from './PetScheduler'
 import { petTime } from '../lib/petTime'
 import { resolveSkin } from '../lib/skins'
+import {
+  resolveSpecies,
+  resolvePalette,
+  type PetModelProps
+} from '../lib/species'
 import { resolveInitialFishPosition } from '../lib/fishPosition'
 import { serializePoops, type Poop } from '../lib/poop'
 import { useDrag } from './useDrag'
@@ -59,6 +64,8 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
   // Configuration & Time
   const workEndTime = ref('18:00')
   const workEndReminderEnabled = ref(true)
+  const speciesId = ref('classic-fish')
+  const paletteId = ref('default')
   const skinId = ref('default')
   const currentTime = ref(new Date())
 
@@ -149,10 +156,23 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
 
   const effectiveMoodClass = computed(() => effectiveMood.value)
 
-  const skinPalette = computed(() => resolveSkin(skinId.value).palette)
+  const currentSpecies = computed(() => resolveSpecies(speciesId.value))
+  const currentPalette = computed(() => resolvePalette(currentSpecies.value, paletteId.value))
+  const skinPalette = computed(() => currentPalette.value.colors)
   const bodyColor = computed(() => skinPalette.value[effectiveMood.value].body)
   const tailColor = computed(() => skinPalette.value[effectiveMood.value].tail)
   const finColor = computed(() => skinPalette.value[effectiveMood.value].fin)
+
+  const modelProps = computed<PetModelProps>(() => ({
+    effectiveMood: effectiveMood.value,
+    facingLeft: facingLeft.value,
+    mousePos: mousePos.value,
+    isScared: isScared.value,
+    isSleeping: isSleeping.value,
+    isPooping: isPooping.value,
+    isRainbow: isRainbow.value,
+    palette: skinPalette.value
+  }))
 
   const displayMessage = computed(() => {
     if (isSleeping.value) return 'Z z z ...'
@@ -257,14 +277,23 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         const config = await window.api.getConfig()
         workEndTime.value = config.workEndTime
         workEndReminderEnabled.value = config.workEndReminderEnabled
-        skinId.value = config.skinId
+        speciesId.value = config.speciesId ?? 'classic-fish'
+        paletteId.value = config.paletteId ?? config.skinId ?? 'default'
+        skinId.value = paletteId.value
         currentPoopEnabled = config.poopEnabled
 
         unsubscribeGlobal.push(
           window.api.onConfigChanged((updated) => {
             workEndTime.value = updated.workEndTime
             workEndReminderEnabled.value = updated.workEndReminderEnabled
-            skinId.value = updated.skinId
+            if (updated.speciesId) speciesId.value = updated.speciesId
+            if (updated.paletteId) {
+              paletteId.value = updated.paletteId
+              skinId.value = updated.paletteId
+            } else if (updated.skinId) {
+              paletteId.value = updated.skinId
+              skinId.value = updated.skinId
+            }
             if (updated.poopEnabled !== currentPoopEnabled) {
               currentPoopEnabled = updated.poopEnabled
               engine.setPoopEnabled(updated.poopEnabled)
@@ -334,6 +363,12 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
   return {
     engine,
     scheduler,
+    speciesId,
+    paletteId,
+    currentSpecies,
+    currentPalette,
+    modelProps,
+    mousePos,
     fishPos,
     fishStyle,
     facingLeft,

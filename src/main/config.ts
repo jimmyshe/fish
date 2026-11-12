@@ -34,7 +34,11 @@ export function createConfigStore({ configPath, debounceMs = 500, onChanged }: C
       return { ...DEFAULT_CONFIG }
     }
     try {
-      return { ...DEFAULT_CONFIG, ...(JSON.parse(readFileSync(configPath, 'utf-8')) as Partial<Config>) }
+      const parsed = JSON.parse(readFileSync(configPath, 'utf-8')) as Partial<Config>
+      const speciesId = parsed.speciesId ?? DEFAULT_CONFIG.speciesId
+      const paletteId = parsed.paletteId ?? parsed.skinId ?? DEFAULT_CONFIG.paletteId
+      const skinId = paletteId
+      return { ...DEFAULT_CONFIG, ...parsed, speciesId, paletteId, skinId }
     } catch {
       console.warn(`[config] 无法解析 ${configPath}，已回退默认配置`)
       return { ...DEFAULT_CONFIG }
@@ -60,7 +64,13 @@ export function createConfigStore({ configPath, debounceMs = 500, onChanged }: C
   return {
     get: () => config,
     set: (patch) => {
-      config = { ...config, ...patch }
+      const normalizedPatch: Partial<Config> = { ...patch }
+      if (patch.paletteId && !patch.skinId) {
+        normalizedPatch.skinId = patch.paletteId
+      } else if (patch.skinId && !patch.paletteId) {
+        normalizedPatch.paletteId = patch.skinId
+      }
+      config = { ...config, ...normalizedPatch }
       schedulePersist()
       onChanged?.(config)
       return config

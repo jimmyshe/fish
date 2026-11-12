@@ -151,9 +151,17 @@ ipcMain.on('set-global-mouse-tracking', (_event, enabled: boolean) => {
   applyGlobalMouseTracking(enabled)
 })
 
-// 皮肤：主进程不透明持久化（调色板注册表归 renderer 属主，ADR 0006）
+// 物种与调色：主进程不透明持久化（注册表归 renderer 属主，ADR 0008）
+ipcMain.handle('set-species-id', (_event, speciesId: string) => {
+  configStore.set({ speciesId })
+})
+
+ipcMain.handle('set-palette-id', (_event, paletteId: string) => {
+  configStore.set({ paletteId, skinId: paletteId })
+})
+
 ipcMain.handle('set-skin-id', (_event, skinId: string) => {
-  configStore.set({ skinId })
+  configStore.set({ skinId, paletteId: skinId })
 })
 
 ipcMain.on('set-poop-enabled', (_event, enabled: boolean) => {

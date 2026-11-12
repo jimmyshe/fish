@@ -30,6 +30,12 @@ const api: Api = {
   setGlobalMouseTracking: (enabled: boolean): void => {
     ipcRenderer.send('set-global-mouse-tracking', enabled)
   },
+  setSpeciesId: (speciesId: string): Promise<void> => {
+    return ipcRenderer.invoke('set-species-id', speciesId)
+  },
+  setPaletteId: (paletteId: string): Promise<void> => {
+    return ipcRenderer.invoke('set-palette-id', paletteId)
+  },
   setSkinId: (id: string): Promise<void> => {
     return ipcRenderer.invoke('set-skin-id', id)
   },
