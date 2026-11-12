@@ -5,9 +5,13 @@
 - `npm run dev` — Start development server (electron-vite dev)
 - `npm run build` — Build for production (electron-vite build)
 - `npm run dist` — Build and package into installable (electron-vite build && electron-builder)
+- `npm run check` — 静态检查全套（`npm run typecheck && npm run check:timers`）
+- `npm run typecheck` — 运行 vue-tsc 类型检查（`vue-tsc --noEmit`）
+- `npm run check:timers` — 检查渲染层禁止裸调 setTimeout/setInterval 规则
 - `npm test` — Run unit tests (vitest, fake timers)
 - `cd server && uv run pytest` — 后端单元测试（pytest + respx stub JWKS）
 - `cd server && uv run uvicorn app.main:create_app --factory` — 本地启动后端（需先配好环境变量，见 `server/.env.example`）
+- *Git Worktree 依赖复用*: 新建 worktree 时可通过目录联接秒级复用主目录依赖：`cmd /c mklink /J node_modules <path-to-main-node_modules>`
 
 ## Project Structure
 
@@ -15,7 +19,11 @@
 src/
 ├── main/          # Electron main process (playground window, 主面板 window, tray, IPC, config persistence, global mouse hook, auth 登录)
 ├── preload/       # Context-isolated API bridge (window.api)
-└── renderer/      # Vue 3 frontend (DesktopPet.vue 游乐场；panel.html 主面板入口 + MainPanel/SettingsTab/LeaderboardTab)
+└── renderer/      # Vue 3 frontend
+    ├── components/    # DesktopPet.vue (纯视觉外壳 < 200 行); MainPanel/SettingsTab/LeaderboardTab
+    ├── composables/   # usePetEngine (引擎响应式桥接与生命周期), PetScheduler (定时调度属主), useDrag
+    ├── lib/           # petEngine (行为决策仲裁+运动模拟), behaviorTree (纯函数组合子), fishMotion, skins, poop
+    └── styles/        # base.css, desktopPet.css (宠物独立样式)
 server/            # 铲屎计数后端（FastAPI + SQLite + uv，Python）
 ├── app/           # config（环境变量）、db（sqlite3）、auth（JWKS 验签 + userinfo 取用户名）、main（FastAPI app 工厂）
 └── tests/         # pytest，唯一接缝是 HTTP API（TestClient），真 JWT + respx stub JWKS
@@ -24,6 +32,7 @@ server/            # 铲屎计数后端（FastAPI + SQLite + uv，Python）
 ## Key Conventions
 
 - **Language**: Chinese (README, code comments, UI strings)
+- **宠物引擎（PetEngine）与行为树（BehaviorTree）**: `src/renderer/src/lib/petEngine.ts` 为高层行为决策仲裁与 Steering 物理运动模拟的唯一属主（ADR 0007）。基于极简纯函数式行为树组合子（`src/renderer/src/lib/behaviorTree.ts`），严格执行 5 级根优先级：`Dragging > ScaredDash > Sleeping > PoopStraining > Roaming`；连击彩蛋与喝水提醒作为正交修饰层解耦；输出不可变快照 `BehaviorSnapshot`，按事件与定时响应式求值；`DesktopPet.vue` 退化为纯视觉外壳（< 200 行），通过 `src/renderer/src/composables/usePetEngine.ts` 响应式消费快照，DOM 事件全量委托给引擎
 - **Config persistence**: JSON stored in `app.getPath('userData')/config.json`; owned by the configStore module (`src/main/config.ts`, debounced writes, flushed on will-quit). The `Config` type and the `window.api` contract live in `src/shared/` as the single source for all three processes. `windowX/windowY` 语义为鱼元素在屏幕内的位置（不再是窗口位置）
 - **IPC**: Renderer uses `window.api` (exposed via preload); main process uses `ipcMain.handle/on`. 配置同步唯一缝隙：`configStore.set()` 是唯一写点，set 即向所有窗口广播完整 Config（`config-changed`）；renderer 一律挂载先拉 `getConfig()`、再订阅 `onConfigChanged`（DesktopPet 只挑关心的字段比对，poopEnabled 真实变化才重应用）。登录态推送：`onAuthStateChanged`（广播给所有窗口 BrowserWindow.getAllWindows()；各窗口挂载时先拉一次再订阅）。主面板 tab 切换：`panel-switch-tab`（托盘再次点击入口项时推送给已打开的主面板）。setter 通道（set-work-end-time 等）保留但不再兼任同步（不回传 Config）。fire-and-forget 上报：`reportScoop()`（renderer 铲屎时无条件调用，是否登录由主进程判断）。联网数据 invoke 型：`getMe` / `getLeaderboard` / `setShowOnLeaderboard`（未登录或失败返回 null，renderer 给占位态）
 - **Auth（登录）**: 登录态唯一属主是 `src/main/auth.ts`（openid-client v6 + PKCE + loopback 回调固定 127.0.0.1:12344，opener/safeStorage/文件路径注入便于测试）；token 经 safeStorage 加密写 `userData/auth.json`（独立于明文 config.json）；OIDC 参数为模块内常量 + env 覆盖（`POCKET_ID_ISSUER`/`FISH_OIDC_CLIENT_ID`/`FISH_API_RESOURCE`）；openid-client 是纯 ESM，electron.vite.config.ts 里 `externalizeDepsPlugin({ exclude: ['openid-client'] })` 必须保留。登录/退出入口在主面板「🏆 排行榜」tab（登录失败由 tab 内错误文案呈现，不再弹主进程对话框）
@@ -54,11 +63,12 @@ server/            # 铲屎计数后端（FastAPI + SQLite + uv，Python）
 
 - Unit tests via vitest (`npm test`), colocated as `*.test.ts`; CI runs them on push to master and PRs (.github/workflows/test.yml)
 - 后端测试：`cd server && uv run pytest`；测试自签 RSA JWT，外部 PocketID JWKS 端点用 respx stub，不 mock 鉴权本身、不直接查库断言
-- All timer-driven behavior is owned by the PetScheduler module (src/renderer/src/composables/); new scheduled behavior registers a named timer there instead of raw setTimeout/setInterval
+- All timer-driven behavior is owned by the PetScheduler module (src/renderer/src/composables/); new scheduled behavior registers a named timer there instead of raw setTimeout/setInterval. 由 `npm run check:timers` 自动守护
+- 静态质量守护：`npm run check`（含 vue-tsc 类型检查与 check:timers 规范检查），CI 在 test job 中自动执行
 
 ## Missing
 
-- No lint or typecheck scripts defined
+- No ESLint configured (guarded by vue-tsc typecheck and check:timers script)
 
 ## Stack
 

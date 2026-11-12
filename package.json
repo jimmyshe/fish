@@ -42,6 +42,9 @@
     "preview": "electron-vite preview",
     "dist": "electron-vite build && electron-builder",
     "test": "vitest run",
+    "typecheck": "vue-tsc --noEmit",
+    "check:timers": "node scripts/check-timers.mjs",
+    "check": "npm run typecheck && npm run check:timers",
     "generate:tray-icon": "node scripts/generate-tray-icon.mjs"
   },
   "dependencies": {
