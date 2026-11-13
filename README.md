@@ -1,4 +1,4 @@
-# Fish Pet 🐟 `v1.10.0`
+# Fish Pet 🐟 `v1.11.0`
 
 一个基于 Electron + Vite + Vue 3 制作的趣味桌面摸鱼宠物。它会陪伴你度过忙碌的工作时光，实时显示下班倒计时，并在下班时刻准时提醒你"快跑"！
 
@@ -13,8 +13,8 @@
 - **开机自启动**：可选随系统登录自动启动。
 - **系统托盘**：托盘菜单固定三项——「⚙️ 设置」「🏆 排行榜」（打开主面板对应页面）与「❌ 退出」，附带小鱼图标。
 - **全局鼠标追踪**：基于 uiohook-napi 的全局鼠标钩子（30Hz 节流），驱动鱼眼跟随与避鼠行为；可在主面板设置页开关。支持 Windows 与 Linux X11，Wayland 下自动降级为窗口内追踪。
-- **拉屎**：小鱼每 15~30 分钟随机拉一泡 💩（清醒时会停下使劲，睡着就梦游拉），受惊时也会被吓出屎；💩 会留在屏幕上直到你点击铲走，重启不消失；主面板设置页可开关。
-- **皮肤系统**：5 套内置配色皮肤（默认 / 金鲤 / 樱花 / 水墨 / 赛博），主面板设置页色板点击即换、平滑过渡；每种心情的鱼色都跟随皮肤，选择自动持久化。🎨
+- **拉屎**：宠物每 15~30 分钟随机拉一泡 💩（清醒时会停下使劲，睡着就梦游拉），受惊时也会被吓出屎；💩 会留在屏幕上直到你点击铲走，重启不消失（独立持久化于 `poops.json`）；主面板设置页可开关。
+- **物种与调色系统**：主面板设置页提供「🐾 物种」与「🎨 调色」两层联动选择（ADR 0008）——支持经典小鱼（默认 / 金鲤 / 樱花 / 水墨 / 赛博 5 套配色，随心情自动变色）与新物种「🐋 虎鲸」（经典黑白原色、水平尾叶上下拍打与气孔喷水动画）；选择自动持久化。🎨
 
 ### 🌐 联网玩法（可选）
 - **PocketID 登录**：passkey 免密码登录（系统浏览器完成，token 加密存储）；不登录完全不影响单机玩法。
@@ -44,7 +44,7 @@
 - **框架**: [Electron 31](https://www.electronjs.org/) + [Vue 3](https://vuejs.org/)
 - **构建工具**: [electron-vite](https://electron-vite.org/)
 - **语言**: TypeScript
-- **测试**: Vitest（108 个单元测试）+ pytest（后端 15 个）
+- **测试**: Vitest（203 个单元测试）+ pytest（后端 15 个）
 - **打包**: electron-builder
 - **后端**: FastAPI + SQLite（`server/`，PocketID OIDC 验签，独立版本演进）
 
@@ -57,6 +57,7 @@ src/
 ├── main/          # Electron 主进程
 │   ├── index.ts   # 游乐场窗口、托盘接线、IPC 注册
 │   ├── config.ts  # configStore：配置唯一属主（去抖持久化）
+│   ├── poopStore.ts # poopStore：屎列表独立持久化（poops.json）
 │   ├── menu.ts    # 菜单模块：托盘菜单（设置 / 排行榜 / 退出）
 │   ├── alwaysOnTop.ts # 置顶看门狗：周期性重新声明置顶，防被其他置顶窗口抢占
 │   ├── auth.ts    # 登录模块：PocketID OIDC（PKCE + loopback 回调），safeStorage 加密存 token
@@ -69,7 +70,8 @@ src/
     └── src/
         ├── App.vue
         ├── components/
-        │   ├── DesktopPet.vue   # 宠物状态组合与模板
+        │   ├── DesktopPet.vue   # 纯视觉外壳（消费 PetEngine 快照）
+        │   ├── models/          # 物种模型组件（ClassicFishModel / OrcaModel）
         │   ├── MainPanel.vue    # 主面板 tab 壳（设置 / 排行榜）
         │   ├── SettingsTab.vue  # 设置 tab（全部即时生效）
         │   └── LeaderboardTab.vue # 排行榜 tab（登录 + 联网数据）
@@ -77,14 +79,17 @@ src/
         │   └── base.css         # 主面板共享样式（按钮、表单行、配色）
         ├── composables/
         │   ├── PetScheduler.ts  # 定时器调度模块（after/every/cancel）
-        │   ├── usePetScheduler.ts
+        │   ├── usePetEngine.ts  # 引擎响应式桥接与生命周期
         │   └── useDrag.ts       # 拖拽模块（位移、点击判定）
         └── lib/
+            ├── behaviorTree.ts  # 行为树纯函数组合子（ADR 0007）
+            ├── petEngine.ts     # 高层行为决策仲裁与运动模拟（ADR 0007）
             ├── petTime.ts       # 时间推导模块（心情阈值与文案）
             ├── fishPosition.ts  # 鱼位置纯逻辑（初始落点、屏幕收敛）
             ├── fishMotion.ts    # 运动模块：漫游/避鼠/逃窜转向力（MOTION 参数）
             ├── poop.ts          # 排泄模块：拉屎间隔、落点与序列化（POOP 参数）
-            └── skins.ts         # 皮肤注册表：具名配色调色板 + 未知 id 回退（ADR 0006）
+            ├── species.ts       # 物种与调色注册表（ADR 0008）
+            └── skins.ts         # 皮肤兼容层：老版本 skinId 平滑迁移（ADR 0006/0008）
 server/            # 铲屎计数后端（FastAPI + SQLite，Docker 部署，独立 server-v* 版本）
 ```
 
@@ -118,7 +123,7 @@ npm run dist
 ## 🎮 使用说明
 
 1. **移动**：左键长按小鱼可拖拽至屏幕任意位置。
-2. **设置**：点击托盘图标的「⚙️ 设置」，在主面板中调整下班时间、下班提示、皮肤、拉屎、全局鼠标追踪、开机自启动与窗口置顶，全部即时生效。
+2. **设置**：点击托盘图标的「⚙️ 设置」，在主面板中调整下班时间、下班提示、物种与调色、拉屎、全局鼠标追踪、开机自启动与窗口置顶，全部即时生效。
 3. **互动**：尝试点击、快速晃动鼠标或静置屏幕，探索更多动画细节。
 
 ## 📋 更新日志
