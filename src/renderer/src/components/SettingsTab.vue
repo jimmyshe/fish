@@ -177,6 +177,7 @@ function onPaletteChange(newPaletteId: string): void {
 /* 物种药丸选择器 */
 .species-picker {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 .species-pill {

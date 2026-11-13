@@ -123,6 +123,15 @@ export const SPECIES_LIST: readonly PetSpecies[] = [
     palettes: CLASSIC_FISH_PALETTES,
     defaultPaletteId: 'default',
     previewColor: '#74b9ff'
+  },
+  {
+    id: 'orca',
+    name: '虎鲸',
+    icon: '🐋',
+    modelId: 'orca',
+    palettes: [],
+    defaultPaletteId: 'default',
+    previewColor: '#2d3436'
   }
 ]
 
