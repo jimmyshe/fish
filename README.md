@@ -1,4 +1,4 @@
-# Fish Pet 🐟 `v1.11.0`
+# Fish Pet 🐟 `v1.12.0`
 
 一个基于 Electron + Vite + Vue 3 制作的趣味桌面摸鱼宠物。它会陪伴你度过忙碌的工作时光，实时显示下班倒计时，并在下班时刻准时提醒你"快跑"！
 
@@ -47,7 +47,7 @@
 - **框架**: [Electron 31](https://www.electronjs.org/) + [Vue 3](https://vuejs.org/)
 - **构建工具**: [electron-vite](https://electron-vite.org/)
 - **语言**: TypeScript
-- **测试**: Vitest（203 个单元测试）+ pytest（后端 15 个）
+- **测试**: Vitest（233 个单元测试）+ pytest（后端 15 个）
 - **打包**: electron-builder
 - **后端**: FastAPI + SQLite（`server/`，PocketID OIDC 验签，独立版本演进）
 
