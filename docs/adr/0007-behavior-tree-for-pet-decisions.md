@@ -20,4 +20,5 @@ Status: accepted
 - 行为决策彻底成为可独立测试的深模块，支持在 Vitest 环境下传入模拟黑板上下文进行纯无头单元测试，无需挂载 Vue DOM 或 Electron 窗口。
 - `DesktopPet.vue` 的职责进一步收敛为纯视觉展现，消费 `BehaviorSnapshot` 快照并渲染 SVG/CSS。
 - 根选择器严格锁定 5 级优先级：`Dragging > ScaredDash > Sleeping > PoopStraining > Roaming`。
+- **睡眠转移收口（不可逆抢占）**：`Sleeping` 被更高优先级节点（`Dragging` / `ScaredDash`）抢占时视为不可逆唤醒，不在拖拽或受惊结束后恢复睡眠；`snapshot.isSleeping` 严格由 `currentAction === 'sleeping'` 派生，进出睡眠的副作用（`zzz` 粒子起停、睡眠倒计时重挂、唤醒气泡分流）统一由 `PetEngine.tick()` 的动作转移钩子收口，消除散落于各交互入口的清理胶水。
 - `GLOSSARY.md` 补充「行为树决策」条目（已同步更新）。

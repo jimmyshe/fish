@@ -413,6 +413,90 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
       expect(engine.getSnapshot().isSleeping).toBe(false)
       expect(engine.getSnapshot().currentAction).toBe('roaming')
     })
+
+    it('normal mouse movement (handleMouseActivity) wakes up sleeping pet and resets sleep timer', () => {
+      const onShowMessage = vi.fn()
+      const engine = createPetEngine({
+        scheduler,
+        adapter: { onShowMessage },
+        initialFishPos: { x: 300, y: 300 }
+      })
+
+      // Fall asleep after 3 min inactivity
+      vi.advanceTimersByTime(3 * 60 * 1000)
+      expect(engine.getSnapshot().isSleeping).toBe(true)
+
+      // Normal mouse move (not triggering scare)
+      engine.handleMouseActivity(200, 200, 1000)
+
+      expect(engine.getSnapshot().isSleeping).toBe(false)
+      expect(engine.getSnapshot().currentAction).toBe('roaming')
+      expect(onShowMessage).toHaveBeenCalledWith('呼～被吵醒了...', 2000)
+
+      // Sleep timer was reset: still awake after 2 min
+      vi.advanceTimersByTime(2 * 60 * 1000)
+      expect(engine.getSnapshot().isSleeping).toBe(false)
+    })
+
+    it('dragging (startDrag / endDrag) wakes up sleeping pet and stays awake after endDrag', () => {
+      const onShowMessage = vi.fn()
+      const engine = createPetEngine({
+        scheduler,
+        adapter: { onShowMessage },
+        initialFishPos: { x: 300, y: 300 }
+      })
+
+      // Fall asleep after 3 min inactivity
+      vi.advanceTimersByTime(3 * 60 * 1000)
+      expect(engine.getSnapshot().isSleeping).toBe(true)
+
+      engine.startDrag()
+      expect(engine.getSnapshot().isSleeping).toBe(false)
+      expect(engine.getSnapshot().currentAction).toBe('dragging')
+      expect(onShowMessage).toHaveBeenCalledWith('呼～被吵醒了...', 2000)
+
+      engine.moveFishBy(30, 20)
+      engine.endDrag()
+      expect(engine.getSnapshot().isSleeping).toBe(false)
+      expect(engine.getSnapshot().currentAction).toBe('roaming')
+    })
+
+    it('preempting sleeping via Dragging cancels zzz particles and resets sleep timer through behavior tree transition', () => {
+      const onSpawnParticles = vi.fn()
+      const onShowMessage = vi.fn()
+      const engine = createPetEngine({
+        scheduler,
+        adapter: { onSpawnParticles, onShowMessage },
+        initialFishPos: { x: 300, y: 300 }
+      })
+
+      // Inactivity 3 min -> falls asleep & starts periodic Zzz
+      vi.advanceTimersByTime(3 * 60 * 1000)
+      expect(engine.getSnapshot().isSleeping).toBe(true)
+      vi.advanceTimersByTime(1500)
+      expect(onSpawnParticles).toHaveBeenCalledWith(['z', 'Z', 'z'], 1, 'zzz')
+
+      // Preempt sleeping via startDrag -> behavior tree transition handles wakeup side effects
+      onSpawnParticles.mockClear()
+      engine.startDrag()
+      expect(engine.getSnapshot().currentAction).toBe('dragging')
+      expect(engine.getSnapshot().isSleeping).toBe(false)
+      expect(onShowMessage).toHaveBeenCalledWith('呼～被吵醒了...', 2000)
+
+      // Zzz timer was cancelled
+      vi.advanceTimersByTime(1500)
+      expect(onSpawnParticles).not.toHaveBeenCalledWith(['z', 'Z', 'z'], 1, 'zzz')
+
+      // End drag -> returns to roaming (not sleeping) and sleep timer was reset (still awake after 2.5 min)
+      engine.endDrag()
+      expect(engine.getSnapshot().currentAction).toBe('roaming')
+      vi.advanceTimersByTime(2.5 * 60 * 1000)
+      expect(engine.getSnapshot().isSleeping).toBe(false)
+
+      // Full 3 min inactivity after endDrag puts fish back to sleep
+      vi.advanceTimersByTime(0.5 * 60 * 1000)
+      expect(engine.getSnapshot().isSleeping).toBe(true)
+    })
   })
 
   describe('Lifecycle & Subscriptions', () => {
@@ -928,6 +1012,7 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
         expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'scoop' }])
 
         // 睡眠中触发定时拉屎 -> sleep-poop
+        vi.advanceTimersByTime(1800)
         onAchievementEvents.mockClear()
         engine.fallAsleep()
         engine.triggerPoop()

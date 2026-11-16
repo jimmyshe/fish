@@ -262,7 +262,7 @@ export class PetEngine {
     this.currentSnapshot = this.evaluateSnapshot()
 
     if (options.autoStartTimers !== false) {
-      this.resetSleepTimer()
+      this.scheduleSleepTimer()
       this.scheduleWaterReminder()
       this.scheduleMonologue()
       this.scheduler.every('swim-tick', MOTION.TICK_MS, () => this.swimTick())
@@ -386,7 +386,7 @@ export class PetEngine {
     return {
       currentAction: ctx.currentAction,
       movementIntent: ctx.movementIntent,
-      isSleeping: this._isSleeping,
+      isSleeping: ctx.currentAction === 'sleeping',
       isScared: this._isScared,
       isPooping: this._isPooping,
       isHovered: this._isHovered,
@@ -395,9 +395,36 @@ export class PetEngine {
     }
   }
 
-  private tick(): void {
+  private tick(suppressWakeMessage = false): void {
+    const prevAction = this.currentSnapshot.currentAction
     this.currentSnapshot = this.evaluateSnapshot()
+    const nextAction = this.currentSnapshot.currentAction
+    this._isSleeping = nextAction === 'sleeping'
+
+    if (prevAction !== nextAction) {
+      this.handleActionTransition(prevAction, nextAction, suppressWakeMessage)
+    }
     this.notifySubscribers()
+  }
+
+  private handleActionTransition(
+    prevAction: PetActionName,
+    nextAction: PetActionName,
+    suppressWakeMessage: boolean
+  ): void {
+    if (prevAction !== 'sleeping' && nextAction === 'sleeping') {
+      this.scheduler.every('zzz', ZZZ_INTERVAL_MS, () => {
+        if (this.currentSnapshot.isSleeping) {
+          this.adapter.onSpawnParticles?.(['z', 'Z', 'z'], 1, 'zzz')
+        }
+      })
+    } else if (prevAction === 'sleeping' && nextAction !== 'sleeping') {
+      this.scheduler.cancel('zzz')
+      this.scheduleSleepTimer()
+      if (nextAction !== 'scared' && !suppressWakeMessage) {
+        this.showMessage('呼～被吵醒了...', 2000)
+      }
+    }
   }
 
   // ── Dragging ────────────────────────────────────────
@@ -405,12 +432,14 @@ export class PetEngine {
   startDrag(): void {
     if (this._isDragging) return
     this._isDragging = true
+    this.scheduleSleepTimer()
     this.tick()
   }
 
   endDrag(): void {
     if (!this._isDragging) return
     this._isDragging = false
+    this.onActivity()
     this.adapter.onPersistFishPosition?.(this._fishPos)
     this.tick()
   }
@@ -435,6 +464,7 @@ export class PetEngine {
 
     const currentNow = now ?? Date.now()
     const dt = currentNow - this.lastMouseTime
+    let scaredTriggered = false
     if (dt > 0 && dt < 80 && !this._isScared) {
       const dx = x - this.lastMouseClientPos.x
       const dy = y - this.lastMouseClientPos.y
@@ -444,12 +474,13 @@ export class PetEngine {
       if (shouldScare(speed, dist, MOTION.NEAR_RADIUS, MOTION.SCARE_SPEED)) {
         const dashDir = dashDirection(c, this._mousePos)
         this.triggerScared(dashDir)
+        scaredTriggered = true
       }
     }
     this.lastMouseTime = currentNow
     this.lastMouseClientPos = { x, y }
 
-    if (!this._isSleeping) {
+    if (!scaredTriggered) {
       this.onActivity()
     }
   }
@@ -457,12 +488,6 @@ export class PetEngine {
   triggerScared(dashDir?: Vec): void {
     if (this._isScared) return
     this._isScared = true
-
-    if (this._isSleeping) {
-      this.scheduler.cancel('zzz')
-      this._isSleeping = false
-      this.resetSleepTimer()
-    }
 
     const dir =
       dashDir ??
@@ -583,32 +608,21 @@ export class PetEngine {
 
   // ── Sleep Mode ──────────────────────────────────────
 
-  private resetSleepTimer(): void {
-    if (this._isSleeping) {
-      this.wakeUp()
-      return
-    }
+  private scheduleSleepTimer(): void {
     this.scheduler.after('sleep', SLEEP_TIMEOUT_MS, () => {
       this.fallAsleep()
     })
   }
 
   fallAsleep(): void {
+    if (this._isSleeping) return
     this._isSleeping = true
-    this.scheduler.every('zzz', ZZZ_INTERVAL_MS, () => {
-      if (this._isSleeping) {
-        this.adapter.onSpawnParticles?.(['z', 'Z', 'z'], 1, 'zzz')
-      }
-    })
     this.tick()
   }
 
   wakeUp(): void {
     if (!this._isSleeping) return
     this._isSleeping = false
-    this.scheduler.cancel('zzz')
-    this.showMessage('呼～被吵醒了...', 2000)
-    this.resetSleepTimer()
     this.tick()
   }
 
@@ -617,11 +631,11 @@ export class PetEngine {
     this.hasInteractMessage = true
     this._interactMessage = msg
     this.adapter.onShowMessage?.(msg, duration)
-    this.tick()
+    this.tick(true)
     this.scheduler.after('interact', duration, () => {
       this.hasInteractMessage = false
       this._interactMessage = ''
-      this.tick()
+      this.tick(true)
     })
   }
 
@@ -633,12 +647,12 @@ export class PetEngine {
     this._interactMessage = msg
     this.adapter.onShowMessage?.(msg, 4000)
     this.adapter.onSpawnParticles?.(['🏅', '🎉', '✨', '⭐'], 6, 'rainbow')
-    this.tick()
+    this.tick(true)
     this.scheduler.after('interact', 4000, () => {
       this._hasAchievementMessage = false
       this.hasInteractMessage = false
       this._interactMessage = ''
-      this.tick()
+      this.tick(true)
     })
   }
 
@@ -673,20 +687,20 @@ export class PetEngine {
   }
 
   triggerOverwork(): void {
-    if (this._isSleeping) {
-      this._isSleeping = false
-      this.scheduler.cancel('zzz')
-      this.resetSleepTimer()
-    }
+    this._isSleeping = false
     const msg = OVERWORK_MESSAGES[Math.floor(Math.random() * OVERWORK_MESSAGES.length)]
     this.showMessage(msg, 4000)
     this.adapter.onSpawnParticles?.(['💦', '🔥', '💢', '☕'], 5, 'scare')
     this.adapter.onAchievementEvents?.([{ type: 'overwork' }])
-    this.tick()
+    this.tick(true)
   }
 
   onActivity(): void {
-    this.resetSleepTimer()
+    if (this._isSleeping) {
+      this.wakeUp()
+      return
+    }
+    this.scheduleSleepTimer()
   }
 
   handleClick(): void {
@@ -809,9 +823,10 @@ export class PetEngine {
   }
 
   triggerPoop(): void {
-    if (this._isSleeping || this._isScared) {
+    const action = this.currentSnapshot.currentAction
+    if (action === 'sleeping' || action === 'scared') {
       // 梦游拉屎或受惊到点：不唤醒、无使劲动画，直接掉落
-      this.dropPoop(this._isSleeping ? 'sleep' : 'scared')
+      this.dropPoop(action === 'sleeping' ? 'sleep' : 'scared')
     } else {
       // 漫游中：进入使劲序列
       this._isPooping = true
