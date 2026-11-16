@@ -18,9 +18,11 @@
 /* ── 气泡 ── */
 .bubble-wrap {
   position: absolute;
-  left: 0;
+  right: 130px;
   top: 10px;
-  width: 190px;
+  min-width: 190px;
+  width: max-content;
+  max-width: 235px;
   transition: opacity 0.5s;
 }
 .bubble-wrap.sleeping-bubble { opacity: 0.75; }
@@ -88,6 +90,22 @@
 .bubble-subtext {
   font-size: 11px; color: #636e72; margin-top: 3px;
   font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+.salary-badge {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: rgba(253, 203, 110, 0.25);
+  color: #b7791f;
+  white-space: nowrap;
+  font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif;
+}
+.salary-badge.is-overtime {
+  background: rgba(162, 155, 254, 0.25);
+  color: #6c5ce7;
 }
 .interact-flash { animation: text-pop 0.2s ease-out; }
 @keyframes text-pop {

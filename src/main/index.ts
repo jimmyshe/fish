@@ -218,12 +218,25 @@ ipcMain.on('set-poops', (_event, poops: Poop[]) => {
   poopStore.set(poops)
 })
 
+ipcMain.handle('set-work-start-time', (_event, time: string) => {
+  configStore.set({ workStartTime: time })
+})
+
 ipcMain.handle('set-work-end-time', (_event, time: string) => {
   configStore.set({ workEndTime: time })
 })
 
 ipcMain.handle('set-work-end-reminder-enabled', (_event, enabled: boolean) => {
   configStore.set({ workEndReminderEnabled: enabled })
+})
+
+ipcMain.handle('set-salary-ticker-enabled', (_event, enabled: boolean) => {
+  configStore.set({ salaryTickerEnabled: enabled })
+})
+
+ipcMain.handle('set-daily-wage', (_event, wage: number) => {
+  const safeWage = typeof wage === 'number' && Number.isFinite(wage) && wage >= 0 ? wage : 0
+  configStore.set({ dailyWage: safeWage })
 })
 
 ipcMain.on('quit', () => app.quit())

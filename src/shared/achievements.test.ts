@@ -11,13 +11,14 @@ import {
 } from './achievements'
 
 describe('achievements domain module', () => {
-  it('默认状态包含 1 个初始皮肤组合，12 项成就均未解锁', () => {
+  it('默认状态包含 1 个初始皮肤组合，14 项成就均未解锁', () => {
     const state = createDefaultAchievementState()
-    expect(ACHIEVEMENT_LIST).toHaveLength(12)
+    expect(ACHIEVEMENT_LIST).toHaveLength(14)
     expect(state.stats).toEqual({
       scoopCount: 0,
       tapCount: 0,
       waterCount: 0,
+      overworkCount: 0,
       visitedSkins: ['classic-fish:default']
     })
     expect(state.unlocked).toEqual({})
@@ -47,6 +48,7 @@ describe('achievements domain module', () => {
         scoopCount: 0,
         tapCount: 12,
         waterCount: 0,
+        overworkCount: 0,
         visitedSkins: ['classic-fish:gold']
       },
       unlocked: {
@@ -213,9 +215,10 @@ describe('achievements domain module', () => {
     expect(formatAchievementUnlockMessage([ACHIEVEMENT_LIST[0]])).toBe(
       '🏅 解锁成就：【初任铲屎官】'
     )
-    expect(formatAchievementUnlockMessage([ACHIEVEMENT_LIST[7], ACHIEVEMENT_LIST[9]])).toBe(
-      '🏅 解锁【吓出翔了】等 2 项成就！'
-    )
+    expect(formatAchievementUnlockMessage([
+      ACHIEVEMENT_LIST.find((a) => a.id === 'scared-poop')!,
+      ACHIEVEMENT_LIST.find((a) => a.id === 'poop-hoarder')!
+    ])).toBe('🏅 解锁【吓出翔了】等 2 项成就！')
   })
 
   it('getAchievementProgress 返回封顶进度与排序规则', () => {
@@ -245,11 +248,43 @@ describe('achievements domain module', () => {
       'tap-50',
       'water-5',
       'skin-3',
+      'overwork-5',
       'scared-poop',
       'sleep-poop',
       'poop-hoarder',
       'off-work-rush',
-      'late-overtime'
+      'late-overtime',
+      'weekend-worker'
     ])
+  })
+
+  it('打工人扩展成就：overwork-5 与 weekend-worker', () => {
+    let state = createDefaultAchievementState()
+
+    const overworkBatch = applyAchievementEvents(
+      state,
+      Array.from({ length: 5 }, () => ({ type: 'overwork' }) as AchievementEvent),
+      100
+    )
+    state = overworkBatch.state
+    expect(state.stats.overworkCount).toBe(5)
+    expect(overworkBatch.newlyUnlocked.map((a) => a.id)).toEqual(['overwork-5'])
+    expect(getAchievementProgress(state, 'overwork-5')).toEqual({ current: 5, target: 5 })
+
+    // 工作日不解锁周末大怨种
+    const weekday = applyAchievementEvents(
+      state,
+      { type: 'time-check', remainingMinutes: 120, hour: 15, dayOfWeek: 3 },
+      200
+    )
+    expect(weekday.changed).toBe(false)
+
+    // 周六或周日触发解锁
+    const weekend = applyAchievementEvents(
+      state,
+      { type: 'time-check', remainingMinutes: 120, hour: 15, dayOfWeek: 6 },
+      300
+    )
+    expect(weekend.newlyUnlocked.map((a) => a.id)).toEqual(['weekend-worker'])
   })
 })

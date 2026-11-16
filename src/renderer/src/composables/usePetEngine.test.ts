@@ -109,6 +109,31 @@ describe('usePetEngine Composable (Ticket #8)', () => {
     expect(displaySubMessage.value).toBe('')
   })
 
+  it('exposes salaryInfo and displaySalaryBadge for desktop bubble', () => {
+    const engine = createPetEngine({ scheduler, autoStartTimers: false })
+    const {
+      salaryInfo,
+      displaySalaryBadge,
+      showBubble,
+      onFishHover,
+      onFishLeave
+    } = usePetEngine({ engine })
+
+    expect(salaryInfo.value.formattedEarned).toMatch(/^¥\d+\.\d{2}$/)
+    expect(displaySalaryBadge.value).toContain('💰 今日窝囊费')
+
+    // 睡眠或互动消息期间隐藏窝囊费胶囊
+    engine.showMessage('摸鱼中...', 1500)
+    expect(displaySalaryBadge.value).toBe('')
+    vi.advanceTimersByTime(1500)
+    expect(displaySalaryBadge.value).toContain('💰 今日窝囊费')
+
+    // 悬停小鱼不影响显示
+    onFishHover()
+    expect(showBubble.value).toBe(true)
+    onFishLeave()
+  })
+
   it('hitInteractiveAt handles environments without document gracefully', () => {
     expect(hitInteractiveAt(100, 100)).toBe(false)
   })

@@ -3,6 +3,15 @@
        挂载先拉一次 getConfig，之后订阅 config-changed 广播 -->
   <div class="settings-tab">
     <div class="form-row">
+      <span>上班时间</span>
+      <input
+        v-model="workStartTime"
+        type="time"
+        class="time-input"
+        @change="onWorkStartTimeChange"
+      />
+    </div>
+    <div class="form-row">
       <span>下班时间</span>
       <input
         v-model="workEndTime"
@@ -15,6 +24,21 @@
       <span>下班提示</span>
       <input v-model="workEndReminderEnabled" type="checkbox" @change="onReminderChange" />
     </label>
+    <label class="form-row toggle">
+      <span>💰 窝囊费跳表</span>
+      <input v-model="salaryTickerEnabled" type="checkbox" @change="onSalaryTickerChange" />
+    </label>
+    <div class="form-row">
+      <span>💵 日薪（元）</span>
+      <input
+        v-model.number="dailyWage"
+        type="number"
+        min="0"
+        step="10"
+        class="time-input wage-input"
+        @change="onDailyWageChange"
+      />
+    </div>
     <label class="form-row toggle">
       <span>💩 拉屎</span>
       <input v-model="poopEnabled" type="checkbox" @change="onPoopChange" />
@@ -81,8 +105,11 @@ import { computed, ref, onMounted, onUnmounted } from 'vue'
 import type { Config } from '../../../shared/config'
 import { SPECIES_LIST, resolveSpecies, resolvePalette } from '../lib/species'
 
+const workStartTime = ref('09:00')
 const workEndTime = ref('18:00')
 const workEndReminderEnabled = ref(true)
+const salaryTickerEnabled = ref(true)
+const dailyWage = ref(200)
 const poopEnabled = ref(true)
 const globalMouseTracking = ref(true)
 const autoLaunch = ref(false)
@@ -97,8 +124,11 @@ const currentSpecies = computed(() => resolveSpecies(speciesId.value))
 const currentPalette = computed(() => resolvePalette(currentSpecies.value, paletteId.value))
 
 function applyConfig(config: Config): void {
+  workStartTime.value = config.workStartTime ?? '09:00'
   workEndTime.value = config.workEndTime
   workEndReminderEnabled.value = config.workEndReminderEnabled
+  salaryTickerEnabled.value = config.salaryTickerEnabled ?? true
+  dailyWage.value = config.dailyWage ?? 200
   poopEnabled.value = config.poopEnabled
   globalMouseTracking.value = config.globalMouseTracking
   autoLaunch.value = config.autoLaunch
@@ -119,12 +149,28 @@ onUnmounted(() => {
   unsubscribeConfig?.()
 })
 
+function onWorkStartTimeChange(): void {
+  if (window.api && workStartTime.value) void window.api.setWorkStartTime(workStartTime.value)
+}
+
 function onWorkEndTimeChange(): void {
   if (window.api && workEndTime.value) void window.api.setWorkEndTime(workEndTime.value)
 }
 
 function onReminderChange(): void {
   if (window.api) void window.api.setWorkEndReminderEnabled(workEndReminderEnabled.value)
+}
+
+function onSalaryTickerChange(): void {
+  if (window.api) void window.api.setSalaryTickerEnabled(salaryTickerEnabled.value)
+}
+
+function onDailyWageChange(): void {
+  const safe = typeof dailyWage.value === 'number' && Number.isFinite(dailyWage.value) && dailyWage.value >= 0
+    ? dailyWage.value
+    : 0
+  dailyWage.value = safe
+  if (window.api) void window.api.setDailyWage(safe)
 }
 
 function onPoopChange(): void {
@@ -172,6 +218,7 @@ function onPaletteChange(newPaletteId: string): void {
   font-family: inherit;
 }
 .time-input:focus { border-color: #0984e3; }
+.wage-input { width: 96px; }
 
 /* 物种药丸选择器 */
 .species-picker {

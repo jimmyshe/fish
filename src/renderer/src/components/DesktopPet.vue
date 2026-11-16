@@ -15,10 +15,17 @@
           <button class="water-btn" @mousedown.stop @click.stop="confirmWaterDrank">✓ 我喝了！</button>
         </template>
         <template v-else>
-          <div class="bubble-text" :class="{ 'interact-flash': !!interactMessage }">
+          <div v-if="displayMessage" class="bubble-text" :class="{ 'interact-flash': !!interactMessage }">
             {{ displayMessage }}
           </div>
           <div class="bubble-subtext" v-if="displaySubMessage">{{ displaySubMessage }}</div>
+          <div
+            v-if="displaySalaryBadge"
+            class="salary-badge"
+            :class="{ 'is-overtime': salaryInfo.status === 'overtime' }"
+          >
+            {{ displaySalaryBadge }}
+          </div>
         </template>
       </div>
     </div>
@@ -78,6 +85,8 @@ const {
   showBubble,
   displayMessage,
   displaySubMessage,
+  salaryInfo,
+  displaySalaryBadge,
   particles,
   effectiveMoodClass,
   isSleeping,

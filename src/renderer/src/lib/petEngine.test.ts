@@ -1,5 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { PetEngine, createPetEngine, createRoamingAction } from './petEngine'
+import {
+  OVERWORK_COOLDOWN_MS,
+  OVERWORK_THRESHOLD,
+  OVERWORK_WINDOW_MS,
+  PetEngine,
+  createPetEngine,
+  createRoamingAction
+} from './petEngine'
 import { PetScheduler } from '../composables/PetScheduler'
 import { ACHIEVEMENT_LIST } from '../../../shared/achievements'
 
@@ -779,7 +786,7 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
         vi.advanceTimersByTime(122 * 1000)
         expect(onShowMessage).toHaveBeenCalledWith(
           expect.stringMatching(
-            /今天的水怎么这么浑浊|鱼也要996吗|上班是不可能的|感觉有人在看我|今天午饭吃什么|偷偷打了个哈欠|老板是什么味道|我在想一件大事|摸鱼的最高境界|鱼的记忆只有7秒|我看了你好久了|\(\*\^▽\^\*\)|听说摸鱼有益健康|静静地看着你们上班/
+            /今天的水怎么这么浑浊|鱼也要996吗|上班是不可能的|感觉有人在看我|今天午饭吃什么|偷偷打了个哈欠|老板是什么味道|我在想一件大事|摸鱼的最高境界|鱼的记忆只有7秒|我看了你好久了|\(\*\^▽\^\*\)|听说摸鱼有益健康|静静地看着你们上班|周一综合症|又是星期一|星期五|周五摸鱼|周末还在屏幕前|周六的鱼缸|星期天也要加班|明天就是周一/
           ),
           3000
         )
@@ -965,6 +972,73 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
 
         engine.showMessage('恢复正常', 1000)
         expect(engine.interactMessage).toBe('恢复正常')
+      })
+    })
+
+    describe('Overwork Detector (搬砖检测)', () => {
+      it('10 秒滑动窗口内输入达到 45 次触发牛马劝退，并在 5 分钟冷却内不再触发', () => {
+        const onShowMessage = vi.fn()
+        const onSpawnParticles = vi.fn()
+        const onAchievementEvents = vi.fn()
+        const engine = createPetEngine({
+          scheduler,
+          adapter: { onShowMessage, onSpawnParticles, onAchievementEvents },
+          autoStartTimers: false
+        })
+
+        const base = 1_000_000
+        for (let i = 0; i < OVERWORK_THRESHOLD - 1; i++) {
+          engine.handleWorkInput(base + i * 100)
+        }
+        expect(onShowMessage).not.toHaveBeenCalled()
+
+        // 第 45 次触发劝退
+        engine.handleWorkInput(base + (OVERWORK_THRESHOLD - 1) * 100)
+        expect(onShowMessage).toHaveBeenCalledWith(
+          expect.stringMatching(/别卷了|鼠标要冒烟|生产队的驴|停手歇会儿/),
+          4000
+        )
+        expect(onSpawnParticles).toHaveBeenCalledWith(['💦', '🔥', '💢', '☕'], 5, 'scare')
+        expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'overwork' }])
+
+        // 冷却期内再次高频输入不重复触发
+        onShowMessage.mockClear()
+        onAchievementEvents.mockClear()
+        const inCooldown = base + OVERWORK_WINDOW_MS + 5000
+        for (let i = 0; i < OVERWORK_THRESHOLD + 5; i++) {
+          engine.handleWorkInput(inCooldown + i * 50)
+        }
+        expect(onShowMessage).not.toHaveBeenCalled()
+        expect(onAchievementEvents).not.toHaveBeenCalled()
+
+        // 超过 5 分钟冷却后可再次触发
+        const afterCooldown = base + (OVERWORK_THRESHOLD - 1) * 100 + OVERWORK_COOLDOWN_MS + 1
+        for (let i = 0; i < OVERWORK_THRESHOLD; i++) {
+          engine.handleWorkInput(afterCooldown + i * 50)
+        }
+        expect(onShowMessage).toHaveBeenCalledTimes(1)
+        expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'overwork' }])
+      })
+
+      it('输入超出 10 秒窗口会滑出，不会误触发；睡眠中直接触发劝退会唤醒小鱼', () => {
+        const onShowMessage = vi.fn()
+        const engine = createPetEngine({
+          scheduler,
+          adapter: { onShowMessage },
+          autoStartTimers: false
+        })
+
+        // 稀疏输入跨度超过 10 秒，不触发
+        for (let i = 0; i < 60; i++) {
+          engine.handleWorkInput(10_000 + i * 500)
+        }
+        expect(onShowMessage).not.toHaveBeenCalled()
+
+        engine.fallAsleep()
+        expect(engine.getSnapshot().isSleeping).toBe(true)
+        engine.triggerOverwork()
+        expect(engine.getSnapshot().isSleeping).toBe(false)
+        expect(onShowMessage).toHaveBeenCalledTimes(1)
       })
     })
   })

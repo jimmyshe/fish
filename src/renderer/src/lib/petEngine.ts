@@ -148,7 +148,17 @@ const RAINBOW_DURATION_MS = 5000 // 5 s
 const WATER_REMINDER_INTERVAL_MS = 45 * 60 * 1000 // 45 min
 const ZZZ_INTERVAL_MS = 1500 // 1.5 s
 
+export const OVERWORK_WINDOW_MS = 10 * 1000 // 10 s 滑动窗口
+export const OVERWORK_THRESHOLD = 45 // 10 秒内 45 次键鼠输入
+export const OVERWORK_COOLDOWN_MS = 5 * 60 * 1000 // 5 分钟冷却
+
 const SCARE_MESSAGES = ['呀！！', '不要过来！', '救命！', '太快了！', '(ﾟДﾟ)！']
+const OVERWORK_MESSAGES = [
+  '🔥 别卷了！键盘都要敲出火星子了！',
+  '💦 鼠标要冒烟啦，快喝口水摸会儿鱼！',
+  '🐂 生产队的驴都不敢这么连轴转！',
+  '☕ 停手歇会儿！老板画的饼消化了吗？'
+]
 const POOP_RELIEF_MESSAGES = ['舒服了', '别看', '……', '谁把灯打开']
 const SCOOP_MESSAGES = ['谢谢主人', '好人一生平安', '终于有人管了']
 const RAINBOW_MESSAGES = ['🌈 彩虹鱼出现了！！', '✨ 传说中的彩鱼！', '🎊 隐藏彩蛋解锁！']
@@ -181,6 +191,12 @@ const MONOLOGUES = [
   '听说摸鱼有益健康',
   '静静地看着你们上班'
 ]
+const WEEKLY_MONOLOGUES: Record<number, readonly string[]> = {
+  1: ['周一综合症犯了，灵魂还在被窝里…', '又是星期一，先摸半小时鱼缓一缓'],
+  5: ['听说今天是星期五？鱼鳍已经开始雀跃了！', '周五摸鱼，效率翻倍，快乐加倍！'],
+  6: ['周末还在屏幕前？打工人真是太拼了…', '周六的鱼缸特别安静，不如早点休息吧'],
+  0: ['星期天也要加班吗？鱼都替你心疼', '明天就是周一了，今晚记得早点睡！']
+}
 
 export class PetEngine {
   private readonly adapter: PetEngineAdapter
@@ -222,6 +238,8 @@ export class PetEngine {
   private hasInteractMessage = false
   private _hasAchievementMessage = false
   private _interactMessage = ''
+  private inputTimestamps: number[] = []
+  private lastOverworkAt = -Infinity
 
   private currentSnapshot: BehaviorSnapshot
 
@@ -628,11 +646,43 @@ export class PetEngine {
     const delay = (90 + Math.random() * 120) * 1000 // 1.5~3.5 分钟
     this.scheduler.after('monologue', delay, () => {
       if (!this._isSleeping && !this._isScared && !this.hasInteractMessage) {
-        const msg = MONOLOGUES[Math.floor(Math.random() * MONOLOGUES.length)]
+        const weekly = WEEKLY_MONOLOGUES[new Date().getDay()]
+        const pool = weekly ? [...MONOLOGUES, ...weekly] : MONOLOGUES
+        const msg = pool[Math.floor(Math.random() * pool.length)]
         this.showMessage(msg, 3000)
       }
       this.scheduleMonologue()
     })
+  }
+
+  handleWorkInput(now = Date.now()): void {
+    this.onActivity()
+    this.inputTimestamps = this.inputTimestamps.filter((t) => now - t <= OVERWORK_WINDOW_MS)
+    this.inputTimestamps.push(now)
+
+    if (
+      this.inputTimestamps.length >= OVERWORK_THRESHOLD &&
+      !this._isDragging &&
+      !this._isScared &&
+      now - this.lastOverworkAt >= OVERWORK_COOLDOWN_MS
+    ) {
+      this.inputTimestamps = []
+      this.lastOverworkAt = now
+      this.triggerOverwork()
+    }
+  }
+
+  triggerOverwork(): void {
+    if (this._isSleeping) {
+      this._isSleeping = false
+      this.scheduler.cancel('zzz')
+      this.resetSleepTimer()
+    }
+    const msg = OVERWORK_MESSAGES[Math.floor(Math.random() * OVERWORK_MESSAGES.length)]
+    this.showMessage(msg, 4000)
+    this.adapter.onSpawnParticles?.(['💦', '🔥', '💢', '☕'], 5, 'scare')
+    this.adapter.onAchievementEvents?.([{ type: 'overwork' }])
+    this.tick()
   }
 
   onActivity(): void {

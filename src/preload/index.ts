@@ -13,11 +13,20 @@ const api: Api = {
     ipcRenderer.on('config-changed', handler)
     return () => ipcRenderer.removeListener('config-changed', handler)
   },
+  setWorkStartTime: (time: string): Promise<void> => {
+    return ipcRenderer.invoke('set-work-start-time', time)
+  },
   setWorkEndTime: (time: string): Promise<void> => {
     return ipcRenderer.invoke('set-work-end-time', time)
   },
   setWorkEndReminderEnabled: (enabled: boolean): Promise<void> => {
     return ipcRenderer.invoke('set-work-end-reminder-enabled', enabled)
+  },
+  setSalaryTickerEnabled: (enabled: boolean): Promise<void> => {
+    return ipcRenderer.invoke('set-salary-ticker-enabled', enabled)
+  },
+  setDailyWage: (wage: number): Promise<void> => {
+    return ipcRenderer.invoke('set-daily-wage', wage)
   },
   getFishPosition: (): Promise<ScreenPoint> => {
     return ipcRenderer.invoke('get-fish-position')
@@ -117,6 +126,11 @@ const api: Api = {
     const handler = (_event: IpcRendererEvent, pos: ScreenPoint): void => callback(pos)
     ipcRenderer.on('global-mouse-click', handler)
     return () => ipcRenderer.removeListener('global-mouse-click', handler)
+  },
+  onGlobalKeyDown: (callback: () => void): (() => void) => {
+    const handler = (): void => callback()
+    ipcRenderer.on('global-key-down', handler)
+    return () => ipcRenderer.removeListener('global-key-down', handler)
   }
 }
 

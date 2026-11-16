@@ -121,7 +121,10 @@ describe('achievementStore 模块', () => {
     writeFileSync(filePath, JSON.stringify(initial, null, 2), 'utf-8')
 
     store.load()
-    expect(store.get()).toEqual(initial)
+    expect(store.get()).toEqual({
+      ...initial,
+      stats: { ...initial.stats, overworkCount: 0 }
+    })
 
     const res = store.record([{ type: 'scoop' }, { type: 'scoop' }], 2000)
     expect(res.newlyUnlocked.map((a) => a.id)).toEqual(['scoop-10'])

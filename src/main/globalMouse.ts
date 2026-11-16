@@ -66,9 +66,14 @@ function onMouseButton(e: UiohookMouseEvent): void {
   targetWindow?.webContents.send('global-mouse-click', { x: e.x, y: e.y })
 }
 
+/** 键盘敲击脉冲：彻底丢弃具体键码，仅推送无参敲击活动信号 */
+function onKeyDown(): void {
+  targetWindow?.webContents.send('global-key-down')
+}
+
 /**
- * 启动全局鼠标追踪：mousemove 节流至约 30Hz 后经 IPC 推送，
- * mousedown / mouseup / click 不节流直接推送。
+ * 启动全局输入追踪：mousemove 节流至约 30Hz 后经 IPC 推送，
+ * mousedown 与无键码 keydown 脉冲不节流直接推送。
  * 重复调用只换目标窗口；平台不支持或钩子失败时静默/告警降级。
  */
 export function startGlobalMouseTracking(win: BrowserWindow): void {
@@ -86,8 +91,7 @@ export function startGlobalMouseTracking(win: BrowserWindow): void {
     })
     uio.on('mousemove', onMouseMove)
     uio.on('mousedown', onMouseButton)
-    uio.on('mouseup', onMouseButton)
-    uio.on('click', onMouseButton)
+    uio.on('keydown', onKeyDown)
     uio.start()
     tracking = true
   } catch (error) {
@@ -105,6 +109,7 @@ export function stopGlobalMouseTracking(): void {
       uio.removeListener('mousedown', onMouseButton)
       uio.removeListener('mouseup', onMouseButton)
       uio.removeListener('click', onMouseButton)
+      uio.removeListener('keydown', onKeyDown)
       if (tracking) uio.stop()
     } catch (error) {
       console.warn('[globalMouse] 停止全局鼠标钩子失败', error)

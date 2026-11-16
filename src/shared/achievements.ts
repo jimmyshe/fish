@@ -5,12 +5,14 @@ export type AchievementId =
   | 'tap-50'
   | 'water-5'
   | 'skin-3'
+  | 'overwork-5'
   | 'rainbow-combo'
   | 'scared-poop'
   | 'sleep-poop'
   | 'poop-hoarder'
   | 'off-work-rush'
   | 'late-overtime'
+  | 'weekend-worker'
 
 export interface AchievementDef {
   id: AchievementId
@@ -26,6 +28,7 @@ export interface AchievementStats {
   scoopCount: number
   tapCount: number
   waterCount: number
+  overworkCount: number
   visitedSkins: string[]
 }
 
@@ -38,12 +41,13 @@ export type AchievementEvent =
   | { type: 'scoop' }
   | { type: 'tap' }
   | { type: 'water' }
+  | { type: 'overwork' }
   | { type: 'skin'; speciesId: string; paletteId: string }
   | { type: 'rainbow' }
   | { type: 'scared-poop' }
   | { type: 'sleep-poop' }
   | { type: 'poop-count'; count: number }
-  | { type: 'time-check'; remainingMinutes: number; hour: number }
+  | { type: 'time-check'; remainingMinutes: number; hour: number; dayOfWeek?: number }
 
 export interface ApplyAchievementResult {
   state: AchievementState
@@ -107,6 +111,15 @@ export const ACHIEVEMENT_LIST: readonly AchievementDef[] = [
     target: 3
   },
   {
+    id: 'overwork-5',
+    icon: '🔥',
+    title: '一级退堂鼓选手',
+    hint: '累计触发 5 次牛马搬砖劝退提醒',
+    description: '工作再忙也要摸鱼，鱼都看不下去你的手速了。',
+    hidden: false,
+    target: 5
+  },
+  {
     id: 'rainbow-combo',
     icon: '🌈',
     title: '传说中的彩鱼',
@@ -159,6 +172,15 @@ export const ACHIEVEMENT_LIST: readonly AchievementDef[] = [
     description: '深夜十点还在工位，鱼都替你流泪。',
     hidden: true,
     target: 1
+  },
+  {
+    id: 'weekend-worker',
+    icon: '🐂',
+    title: '周末大怨种',
+    hint: '不会有人周末还在工位上打开我吧……',
+    description: '周末还在电脑前发光发热，感动中国打工人！',
+    hidden: true,
+    target: 1
   }
 ] as const
 
@@ -176,6 +198,7 @@ export function createDefaultAchievementState(): AchievementState {
       scoopCount: 0,
       tapCount: 0,
       waterCount: 0,
+      overworkCount: 0,
       visitedSkins: ['classic-fish:default']
     },
     unlocked: {}
@@ -224,6 +247,7 @@ export function normalizeAchievementState(raw: unknown): AchievementState {
       scoopCount: toNonNegativeInt(rawStats.scoopCount),
       tapCount: toNonNegativeInt(rawStats.tapCount),
       waterCount: toNonNegativeInt(rawStats.waterCount),
+      overworkCount: toNonNegativeInt(rawStats.overworkCount),
       visitedSkins: visitedSkins.length > 0 ? visitedSkins : defaults.stats.visitedSkins
     },
     unlocked
@@ -244,6 +268,7 @@ export function applyAchievementEvents(
     scoopCount: state.stats.scoopCount,
     tapCount: state.stats.tapCount,
     waterCount: state.stats.waterCount,
+    overworkCount: state.stats.overworkCount,
     visitedSkins: [...state.stats.visitedSkins]
   }
   const nextUnlocked: Partial<Record<AchievementId, number>> = { ...state.unlocked }
@@ -279,6 +304,12 @@ export function applyAchievementEvents(
         nextStats.waterCount += 1
         changed = true
         if (nextStats.waterCount >= 5) unlock('water-5')
+        break
+      }
+      case 'overwork': {
+        nextStats.overworkCount += 1
+        changed = true
+        if (nextStats.overworkCount >= 5) unlock('overwork-5')
         break
       }
       case 'skin': {
@@ -318,6 +349,9 @@ export function applyAchievementEvents(
         }
         if ((ev.hour >= 22 && ev.remainingMinutes < 0) || ev.hour < 5) {
           unlock('late-overtime')
+        }
+        if (ev.dayOfWeek === 0 || ev.dayOfWeek === 6) {
+          unlock('weekend-worker')
         }
         break
       }
@@ -363,6 +397,9 @@ export function getAchievementProgress(
       break
     case 'skin-3':
       raw = state.stats.visitedSkins.length
+      break
+    case 'overwork-5':
+      raw = state.stats.overworkCount
       break
     default:
       raw = 0

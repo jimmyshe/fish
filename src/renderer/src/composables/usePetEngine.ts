@@ -1,7 +1,7 @@
 import { ref, computed, onMounted, onUnmounted, getCurrentInstance } from 'vue'
 import { createPetEngine, PetEngine, type BehaviorSnapshot } from '../lib/petEngine'
 import { PetScheduler } from './PetScheduler'
-import { petTime } from '../lib/petTime'
+import { computeSalary, petTime } from '../lib/petTime'
 import { resolveSkin } from '../lib/skins'
 import {
   resolveSpecies,
@@ -62,8 +62,11 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
   }
 
   // Configuration & Time
+  const workStartTime = ref('09:00')
   const workEndTime = ref('18:00')
   const workEndReminderEnabled = ref(true)
+  const salaryTickerEnabled = ref(true)
+  const dailyWage = ref(200)
   const speciesId = ref('classic-fish')
   const paletteId = ref('default')
   const skinId = ref('default')
@@ -153,6 +156,9 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
   }))
 
   const timeInfo = computed(() => petTime(currentTime.value, workEndTime.value))
+  const salaryInfo = computed(() =>
+    computeSalary(currentTime.value, workStartTime.value, workEndTime.value, dailyWage.value)
+  )
   const mood = computed(() => timeInfo.value.mood)
 
   const effectiveMood = computed(() => {
@@ -195,12 +201,23 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
     return timeInfo.value.subMessage
   })
 
+  const displaySalaryBadge = computed(() => {
+    if (!salaryTickerEnabled.value || isSleeping.value || showWaterReminder.value || !!interactMessage.value) {
+      return ''
+    }
+    if (!workEndReminderEnabled.value && !isHovered.value) {
+      return ''
+    }
+    return salaryInfo.value.badgeText
+  })
+
   const showBubble = computed(
     () =>
       showWaterReminder.value ||
       isSleeping.value ||
       !!interactMessage.value ||
-      workEndReminderEnabled.value
+      workEndReminderEnabled.value ||
+      (salaryTickerEnabled.value && isHovered.value)
   )
 
   // Pupil tracking
@@ -275,16 +292,24 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
     }
   }
 
+  let lastTimeCheckKey = ''
+
   function checkTimeAchievements() {
-    if (typeof window !== 'undefined' && window.api) {
-      void window.api.recordAchievementEvents([
-        {
-          type: 'time-check',
-          remainingMinutes: timeInfo.value.remainingMinutes,
-          hour: currentTime.value.getHours()
-        }
-      ])
-    }
+    if (typeof window === 'undefined' || !window.api) return
+    const remainingMinutes = timeInfo.value.remainingMinutes
+    const hour = currentTime.value.getHours()
+    const dayOfWeek = currentTime.value.getDay()
+    const key = `${remainingMinutes}:${hour}:${dayOfWeek}`
+    if (key === lastTimeCheckKey) return
+    lastTimeCheckKey = key
+    void window.api.recordAchievementEvents([
+      {
+        type: 'time-check',
+        remainingMinutes,
+        hour,
+        dayOfWeek
+      }
+    ])
   }
 
   // Lifecycle
@@ -302,8 +327,11 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         )
 
         const config = await window.api.getConfig()
+        workStartTime.value = config.workStartTime ?? '09:00'
         workEndTime.value = config.workEndTime
         workEndReminderEnabled.value = config.workEndReminderEnabled
+        salaryTickerEnabled.value = config.salaryTickerEnabled ?? true
+        dailyWage.value = config.dailyWage ?? 200
         speciesId.value = config.speciesId ?? 'classic-fish'
         paletteId.value = config.paletteId ?? config.skinId ?? 'default'
         skinId.value = paletteId.value
@@ -313,8 +341,11 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         unsubscribeGlobal.push(
           window.api.onConfigChanged((updated) => {
             const workEndChanged = updated.workEndTime !== workEndTime.value
+            workStartTime.value = updated.workStartTime ?? '09:00'
             workEndTime.value = updated.workEndTime
             workEndReminderEnabled.value = updated.workEndReminderEnabled
+            salaryTickerEnabled.value = updated.salaryTickerEnabled ?? true
+            dailyWage.value = updated.dailyWage ?? 200
             if (updated.speciesId) speciesId.value = updated.speciesId
             if (updated.paletteId) {
               paletteId.value = updated.paletteId
@@ -354,8 +385,14 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         )
 
         unsubscribeGlobal.push(
-          window.api.onGlobalMouseClick((pos) => {
-            console.debug('[globalMouse] click', pos)
+          window.api.onGlobalMouseClick(() => {
+            engine.handleWorkInput()
+          })
+        )
+
+        unsubscribeGlobal.push(
+          window.api.onGlobalKeyDown(() => {
+            engine.handleWorkInput()
           })
         )
 
@@ -371,7 +408,7 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         window.addEventListener('beforeunload', persistFishPosition)
       }
 
-      scheduler.every('clock', 10000, () => {
+      scheduler.every('clock', 1000, () => {
         currentTime.value = new Date()
         checkTimeAchievements()
       })
@@ -408,6 +445,8 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
     showBubble,
     displayMessage,
     displaySubMessage,
+    salaryInfo,
+    displaySalaryBadge,
     particles,
     effectiveMood,
     effectiveMoodClass,

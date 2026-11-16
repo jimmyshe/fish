@@ -42,10 +42,16 @@ export interface Api {
   getConfig: () => Promise<Config>
   /** 订阅配置变化：configStore.set 后广播完整 Config 给所有窗口，返回取消订阅函数 */
   onConfigChanged: (callback: (config: Config) => void) => () => void
+  /** 设置上班时间（即时生效；同步回执走 config-changed 广播） */
+  setWorkStartTime: (time: string) => Promise<void>
   /** 设置下班时间（即时生效；同步回执走 config-changed 广播） */
   setWorkEndTime: (time: string) => Promise<void>
   /** 开关下班提示（即时生效；同步回执走 config-changed 广播） */
   setWorkEndReminderEnabled: (enabled: boolean) => Promise<void>
+  /** 开关窝囊费实时跳表（即时生效；同步回执走 config-changed 广播） */
+  setSalaryTickerEnabled: (enabled: boolean) => Promise<void>
+  /** 设置日薪（元）（即时生效；同步回执走 config-changed 广播） */
+  setDailyWage: (wage: number) => Promise<void>
   /** 读取鱼元素在屏幕内的持久化位置（负值表示未设置） */
   getFishPosition: () => Promise<ScreenPoint>
   /** 持久化鱼元素位置（拖拽 / 漂移结束时调用） */
@@ -103,4 +109,6 @@ export interface Api {
   onGlobalMouseMove: (callback: (pos: ScreenPoint) => void) => () => void
   /** 订阅全局鼠标点击（不节流），返回取消订阅函数 */
   onGlobalMouseClick: (callback: (pos: ScreenPoint) => void) => () => void
+  /** 订阅全局键盘敲击脉冲（不含任何键码信息），返回取消订阅函数 */
+  onGlobalKeyDown: (callback: () => void) => () => void
 }

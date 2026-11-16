@@ -7,9 +7,15 @@ export interface Poop {
 
 /** 应用配置：唯一类型来源，main / preload / renderer 共用 */
 export interface Config {
+  /** 上班时间（HH:MM），与下班时间共同决定窝囊费线性跳表区间 */
+  workStartTime: string
   workEndTime: string
   /** 下班提示开关；关闭时气泡不报时（心情/特效仍随下班时间变化），气泡只在互动/睡眠/喝水提醒时出现 */
   workEndReminderEnabled: boolean
+  /** 窝囊费跳表开关；开启时在气泡中实时累加今日已赚金额 */
+  salaryTickerEnabled: boolean
+  /** 日薪（元）；窝囊费跳表的每日上限 */
+  dailyWage: number
   /** 鱼元素在屏幕内的位置（游乐场窗口内坐标），负值表示未设置 */
   windowX: number
   windowY: number
@@ -27,8 +33,11 @@ export interface Config {
 }
 
 export const DEFAULT_CONFIG: Config = {
+  workStartTime: '09:00',
   workEndTime: '18:00',
   workEndReminderEnabled: true,
+  salaryTickerEnabled: true,
+  dailyWage: 200,
   windowX: -1,
   windowY: -1,
   autoLaunch: false,
