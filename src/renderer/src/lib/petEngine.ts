@@ -22,6 +22,11 @@ import {
   type Vec
 } from './fishMotion'
 import { nextPoopDelayMs, poopDropPosition, type Poop } from './poop'
+import {
+  formatAchievementUnlockMessage,
+  type AchievementDef,
+  type AchievementEvent
+} from '../../../shared/achievements'
 
 export type MovementIntent = 'user-drag' | 'dash' | 'paused' | 'roam'
 export type PetActionName = 'dragging' | 'scared' | 'sleeping' | 'pooping' | 'roaming'
@@ -58,6 +63,7 @@ export interface PetEngineAdapter {
   onDropPoop?: () => void
   onShowMessage?: (msg: string, duration?: number) => void
   onSpawnParticles?: (chars: string[], count: number, type: string) => void
+  onAchievementEvents?: (events: AchievementEvent[]) => void
 }
 
 export interface PetEngineOptions {
@@ -214,6 +220,7 @@ export class PetEngine {
   }
   private lastTickAt = 0
   private hasInteractMessage = false
+  private _hasAchievementMessage = false
   private _interactMessage = ''
 
   private currentSnapshot: BehaviorSnapshot
@@ -277,6 +284,10 @@ export class PetEngine {
 
   get interactMessage(): string {
     return this._interactMessage
+  }
+
+  get hasAchievementMessage(): boolean {
+    return this._hasAchievementMessage
   }
 
   get mousePos(): Vec {
@@ -454,7 +465,7 @@ export class PetEngine {
     this.adapter.onSpawnParticles?.(['！', '💦', '😱'], 3, 'scare')
 
     if (this._poopEnabled) {
-      this.dropPoop()
+      this.dropPoop('scared')
     }
 
     this.tick()
@@ -584,11 +595,29 @@ export class PetEngine {
   }
 
   showMessage(msg: string, duration = 2000): void {
+    if (this._hasAchievementMessage) return
     this.hasInteractMessage = true
     this._interactMessage = msg
     this.adapter.onShowMessage?.(msg, duration)
     this.tick()
     this.scheduler.after('interact', duration, () => {
+      this.hasInteractMessage = false
+      this._interactMessage = ''
+      this.tick()
+    })
+  }
+
+  celebrateAchievements(unlocked: AchievementDef[]): void {
+    if (unlocked.length === 0) return
+    const msg = formatAchievementUnlockMessage(unlocked)
+    this._hasAchievementMessage = true
+    this.hasInteractMessage = true
+    this._interactMessage = msg
+    this.adapter.onShowMessage?.(msg, 4000)
+    this.adapter.onSpawnParticles?.(['🏅', '🎉', '✨', '⭐'], 6, 'rainbow')
+    this.tick()
+    this.scheduler.after('interact', 4000, () => {
+      this._hasAchievementMessage = false
       this.hasInteractMessage = false
       this._interactMessage = ''
       this.tick()
@@ -623,6 +652,7 @@ export class PetEngine {
     this.showMessage(msg, 2000)
     const count = 2 + Math.floor(Math.random() * 2)
     this.adapter.onSpawnParticles?.(['❤️', '✨', '💕', '⭐', '💛', '💙'], count, 'heart')
+    this.adapter.onAchievementEvents?.([{ type: 'tap' }])
     this.onActivity()
     this.addCombo()
   }
@@ -655,6 +685,7 @@ export class PetEngine {
     const msg = RAINBOW_MESSAGES[Math.floor(Math.random() * RAINBOW_MESSAGES.length)]
     this.showMessage(msg, 4000)
     this.adapter.onSpawnParticles?.(['🌈', '✨', '🎉', '⭐', '💫'], 6, 'rainbow')
+    this.adapter.onAchievementEvents?.([{ type: 'rainbow' }])
     this.tick()
   }
 
@@ -672,13 +703,14 @@ export class PetEngine {
     this._showWaterReminder = false
     this.showMessage('棒棒！多喝水 💪', 2500)
     this.adapter.onSpawnParticles?.(['💧', '✨', '💪', '⭐'], 5, 'rainbow')
+    this.adapter.onAchievementEvents?.([{ type: 'water' }])
     this.scheduleWaterReminder()
     this.tick()
   }
 
   // ── Poop Branching ──────────────────────────────────
 
-  dropPoop(): void {
+  dropPoop(reason: 'normal' | 'scared' | 'sleep' = 'normal'): void {
     const pos = poopDropPosition(this._fishPos, this._facingLeft ? -1 : 1)
     const viewport = this.getViewportSize()
     const newPoop: Poop = {
@@ -690,6 +722,15 @@ export class PetEngine {
     this.adapter.onDropPoop?.()
     this.adapter.onPoopsChange?.(this._poops)
     this.adapter.onPersistPoops?.(this._poops)
+
+    const events: AchievementEvent[] = []
+    if (reason === 'scared') {
+      events.push({ type: 'scared-poop' })
+    } else if (reason === 'sleep') {
+      events.push({ type: 'sleep-poop' })
+    }
+    events.push({ type: 'poop-count', count: this._poops.length })
+    this.adapter.onAchievementEvents?.(events)
   }
 
   scoopPoop(id: string): void {
@@ -697,6 +738,7 @@ export class PetEngine {
     this.adapter.onPoopsChange?.(this._poops)
     this.adapter.onPersistPoops?.(this._poops)
     this.adapter.onReportScoop?.()
+    this.adapter.onAchievementEvents?.([{ type: 'scoop' }])
     const msg = SCOOP_MESSAGES[Math.floor(Math.random() * SCOOP_MESSAGES.length)]
     this.showMessage(msg, 2000)
     this.adapter.onSpawnParticles?.(['✨', '🧹', '💛', '⭐'], 4, 'rainbow')
@@ -705,6 +747,9 @@ export class PetEngine {
   setPoops(poops: Poop[]): void {
     this._poops = [...poops]
     this.adapter.onPoopsChange?.(this._poops)
+    if (this._poops.length >= 5) {
+      this.adapter.onAchievementEvents?.([{ type: 'poop-count', count: this._poops.length }])
+    }
   }
 
   private schedulePoop(): void {
@@ -716,7 +761,7 @@ export class PetEngine {
   triggerPoop(): void {
     if (this._isSleeping || this._isScared) {
       // 梦游拉屎或受惊到点：不唤醒、无使劲动画，直接掉落
-      this.dropPoop()
+      this.dropPoop(this._isSleeping ? 'sleep' : 'scared')
     } else {
       // 漫游中：进入使劲序列
       this._isPooping = true
@@ -724,7 +769,7 @@ export class PetEngine {
 
       this.scheduler.after('poop-drop', POOP_STRAINING_MS, () => {
         this._isPooping = false
-        this.dropPoop()
+        this.dropPoop('normal')
         const msg = POOP_RELIEF_MESSAGES[Math.floor(Math.random() * POOP_RELIEF_MESSAGES.length)]
         this.showMessage(msg, 2000)
         this.tick()

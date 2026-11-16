@@ -112,6 +112,11 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         },
         onSpawnParticles: (chars, count, type) => {
           spawnParticles(chars, count, type)
+        },
+        onAchievementEvents: (events) => {
+          if (typeof window !== 'undefined' && window.api) {
+            void window.api.recordAchievementEvents(events)
+          }
         }
       }
     })
@@ -123,6 +128,7 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
   const poops = ref<Poop[]>([...engine.poops])
   const comboCount = ref(engine.comboCount)
   const interactMessage = ref(engine.interactMessage)
+  const hasAchievementMessage = ref(engine.hasAchievementMessage)
   const mousePos = ref<Vec>({ x: 0, y: 0 })
   const fishSvgRef = ref<SVGElement | null>(null)
 
@@ -130,6 +136,7 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
     snapshot.value = s
     comboCount.value = engine.comboCount
     interactMessage.value = engine.interactMessage
+    hasAchievementMessage.value = engine.hasAchievementMessage
   })
 
   // Behavioral flags derived from snapshot
@@ -175,12 +182,14 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
   }))
 
   const displayMessage = computed(() => {
+    if (hasAchievementMessage.value && interactMessage.value) return interactMessage.value
     if (isSleeping.value) return 'Z z z ...'
     if (interactMessage.value) return interactMessage.value
     return workEndReminderEnabled.value ? timeInfo.value.message : ''
   })
 
   const displaySubMessage = computed(() => {
+    if (hasAchievementMessage.value && interactMessage.value) return ''
     if (isSleeping.value) return '（睡着了，别吵我）'
     if (interactMessage.value || !workEndReminderEnabled.value) return ''
     return timeInfo.value.subMessage
@@ -266,6 +275,18 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
     }
   }
 
+  function checkTimeAchievements() {
+    if (typeof window !== 'undefined' && window.api) {
+      void window.api.recordAchievementEvents([
+        {
+          type: 'time-check',
+          remainingMinutes: timeInfo.value.remainingMinutes,
+          hour: currentTime.value.getHours()
+        }
+      ])
+    }
+  }
+
   // Lifecycle
   const unsubscribeGlobal: Array<() => void> = []
 
@@ -274,6 +295,12 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
       let currentPoopEnabled = true
 
       if (typeof window !== 'undefined' && window.api) {
+        unsubscribeGlobal.push(
+          window.api.onAchievementUnlocked((unlocked) => {
+            engine.celebrateAchievements(unlocked)
+          })
+        )
+
         const config = await window.api.getConfig()
         workEndTime.value = config.workEndTime
         workEndReminderEnabled.value = config.workEndReminderEnabled
@@ -281,9 +308,11 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         paletteId.value = config.paletteId ?? config.skinId ?? 'default'
         skinId.value = paletteId.value
         currentPoopEnabled = config.poopEnabled
+        checkTimeAchievements()
 
         unsubscribeGlobal.push(
           window.api.onConfigChanged((updated) => {
+            const workEndChanged = updated.workEndTime !== workEndTime.value
             workEndTime.value = updated.workEndTime
             workEndReminderEnabled.value = updated.workEndReminderEnabled
             if (updated.speciesId) speciesId.value = updated.speciesId
@@ -297,6 +326,9 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
             if (updated.poopEnabled !== currentPoopEnabled) {
               currentPoopEnabled = updated.poopEnabled
               engine.setPoopEnabled(updated.poopEnabled)
+            }
+            if (workEndChanged) {
+              checkTimeAchievements()
             }
           })
         )
@@ -341,6 +373,7 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
 
       scheduler.every('clock', 10000, () => {
         currentTime.value = new Date()
+        checkTimeAchievements()
       })
     })
 
@@ -395,6 +428,7 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
     poops,
     fishSvgRef,
     interactMessage,
+    hasAchievementMessage,
     startDrag,
     onFishHover,
     onFishLeave,

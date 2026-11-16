@@ -11,10 +11,11 @@
 - **持久化配置**：自定义下班时间，重启应用后自动恢复设置（含鱼的位置记忆）。
 - **喝水提醒**：每 45 分钟温馨提醒喝水，点击确认后重新计时。💧
 - **开机自启动**：可选随系统登录自动启动。
-- **系统托盘**：托盘菜单固定三项——「⚙️ 设置」「🏆 排行榜」（打开主面板对应页面）与「❌ 退出」，附带小鱼图标。
+- **系统托盘**：托盘菜单固定四项——「⚙️ 设置」「🏆 排行榜」「🏅 成就」（打开主面板对应页面）与「❌ 退出」，附带小鱼图标。
 - **全局鼠标追踪**：基于 uiohook-napi 的全局鼠标钩子（30Hz 节流），驱动鱼眼跟随与避鼠行为；可在主面板设置页开关。支持 Windows 与 Linux X11，Wayland 下自动降级为窗口内追踪。
 - **拉屎**：宠物每 15~30 分钟随机拉一泡 💩（清醒时会停下使劲，睡着就梦游拉），受惊时也会被吓出屎；💩 会留在屏幕上直到你点击铲走，重启不消失（独立持久化于 `poops.json`）；主面板设置页可开关。
 - **物种与调色系统**：主面板设置页提供「🐾 物种」与「🎨 调色」两层联动选择（ADR 0008）——支持经典小鱼（默认 / 金鲤 / 樱花 / 水墨 / 赛博 5 套配色，随心情自动变色）与新物种「🐋 虎鲸」（经典黑白原色、水平尾叶上下拍打与气孔喷水动画）；选择自动持久化。🎨
+- **成就图鉴**：纯本地单机 12 项成就（6 项普通进度成就 + 6 项隐藏彩蛋成就），达成瞬间小鱼头顶弹出气泡与欢庆粒子特效，可在主面板「🏅 成就」页查看解锁记录与进度条（独立持久化于 `achievements.json`）。
 
 ### 🌐 联网玩法（可选）
 - **PocketID 登录**：passkey 免密码登录（系统浏览器完成，token 加密存储）；不登录完全不影响单机玩法。
@@ -58,23 +59,25 @@ src/
 │   ├── index.ts   # 游乐场窗口、托盘接线、IPC 注册
 │   ├── config.ts  # configStore：配置唯一属主（去抖持久化）
 │   ├── poopStore.ts # poopStore：屎列表独立持久化（poops.json）
-│   ├── menu.ts    # 菜单模块：托盘菜单（设置 / 排行榜 / 退出）
+│   ├── achievementStore.ts # achievementStore：本地成就独立持久化（achievements.json）
+│   ├── menu.ts    # 菜单模块：托盘菜单（设置 / 排行榜 / 成就 / 退出）
 │   ├── alwaysOnTop.ts # 置顶看门狗：周期性重新声明置顶，防被其他置顶窗口抢占
 │   ├── auth.ts    # 登录模块：PocketID OIDC（PKCE + loopback 回调），safeStorage 加密存 token
 │   ├── apiClient.ts # 联网 API 客户端：/me、/leaderboard、opt-out
 │   ├── reporter.ts # 铲屎事件上报（幂等 UUID，失败即丢弃）
 │   └── globalMouse.ts # 全局鼠标钩子模块（uiohook-napi，30Hz 节流）
 ├── preload/       # 预加载脚本 (安全的 API 桥接)
-├── shared/        # 跨进程共享类型 (Config / window.api 契约)
+├── shared/        # 跨进程共享类型 (Config / window.api 契约 / 成就定义与求值)
 └── renderer/      # Vue 渲染进程（多页：index 游乐场 + panel 主面板窗口）
     └── src/
         ├── App.vue
         ├── components/
         │   ├── DesktopPet.vue   # 纯视觉外壳（消费 PetEngine 快照）
         │   ├── models/          # 物种模型组件（ClassicFishModel / OrcaModel）
-        │   ├── MainPanel.vue    # 主面板 tab 壳（设置 / 排行榜）
+        │   ├── MainPanel.vue    # 主面板 tab 壳（设置 / 排行榜 / 成就）
         │   ├── SettingsTab.vue  # 设置 tab（全部即时生效）
-        │   └── LeaderboardTab.vue # 排行榜 tab（登录 + 联网数据）
+        │   ├── LeaderboardTab.vue # 排行榜 tab（登录 + 联网数据）
+        │   └── AchievementsTab.vue # 成就 tab（收集进度与图鉴）
         ├── styles/
         │   └── base.css         # 主面板共享样式（按钮、表单行、配色）
         ├── composables/

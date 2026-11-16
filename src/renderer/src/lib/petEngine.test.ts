@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { PetEngine, createPetEngine, createRoamingAction } from './petEngine'
 import { PetScheduler } from '../composables/PetScheduler'
+import { ACHIEVEMENT_LIST } from '../../../shared/achievements'
 
 describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
   let scheduler: PetScheduler
@@ -885,6 +886,85 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
 
         engine.setPoops([{ id: 'custom-1', x: 100, y: 100 }])
         expect(onPoopsChange).toHaveBeenCalledWith([{ id: 'custom-1', x: 100, y: 100 }])
+      })
+    })
+
+    describe('Achievement Event Emission & Celebration Bubble Priority', () => {
+      it('emits achievement events on tap, rainbow, water, scoop, scared poop, sleep poop and setPoops >= 5', () => {
+        const onAchievementEvents = vi.fn()
+        const engine = createPetEngine({
+          scheduler,
+          adapter: { onAchievementEvents },
+          autoStartTimers: false
+        })
+
+        engine.handleClick()
+        expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'tap' }])
+
+        onAchievementEvents.mockClear()
+        for (let i = 0; i < 5; i++) engine.handleClick()
+        expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'rainbow' }])
+
+        onAchievementEvents.mockClear()
+        engine.confirmWater()
+        expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'water' }])
+
+        onAchievementEvents.mockClear()
+        engine.triggerScared({ x: 1, y: 0 })
+        expect(onAchievementEvents).toHaveBeenCalledWith([
+          { type: 'scared-poop' },
+          { type: 'poop-count', count: 1 }
+        ])
+
+        onAchievementEvents.mockClear()
+        engine.scoopPoop(engine.poops[0].id)
+        expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'scoop' }])
+
+        // 睡眠中触发定时拉屎 -> sleep-poop
+        onAchievementEvents.mockClear()
+        engine.fallAsleep()
+        engine.triggerPoop()
+        expect(onAchievementEvents).toHaveBeenCalledWith([
+          { type: 'sleep-poop' },
+          { type: 'poop-count', count: 1 }
+        ])
+
+        // setPoops >= 5 补记 poop-count
+        onAchievementEvents.mockClear()
+        engine.setPoops(
+          Array.from({ length: 5 }, (_, i) => ({ id: `p-${i}`, x: i * 10, y: 20 }))
+        )
+        expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'poop-count', count: 5 }])
+      })
+
+      it('celebrateAchievements prioritizes achievement bubble for 4000ms and protects against showMessage', () => {
+        const onShowMessage = vi.fn()
+        const onSpawnParticles = vi.fn()
+        const engine = createPetEngine({
+          scheduler,
+          adapter: { onShowMessage, onSpawnParticles },
+          autoStartTimers: false
+        })
+
+        engine.celebrateAchievements([ACHIEVEMENT_LIST[0], ACHIEVEMENT_LIST[7]])
+        expect(engine.hasAchievementMessage).toBe(true)
+        expect(engine.interactMessage).toBe('🏅 解锁【初任铲屎官】等 2 项成就！')
+        expect(onShowMessage).toHaveBeenCalledWith('🏅 解锁【初任铲屎官】等 2 项成就！', 4000)
+        expect(onSpawnParticles).toHaveBeenCalledWith(['🏅', '🎉', '✨', '⭐'], 6, 'rainbow')
+
+        // 成就气泡展示期间，普通互动气泡不得覆盖
+        onShowMessage.mockClear()
+        engine.showMessage('谢谢主人', 2000)
+        expect(engine.interactMessage).toBe('🏅 解锁【初任铲屎官】等 2 项成就！')
+        expect(onShowMessage).not.toHaveBeenCalled()
+
+        // 4000ms 后解除保护
+        vi.advanceTimersByTime(4000)
+        expect(engine.hasAchievementMessage).toBe(false)
+        expect(engine.interactMessage).toBe('')
+
+        engine.showMessage('恢复正常', 1000)
+        expect(engine.interactMessage).toBe('恢复正常')
       })
     })
   })

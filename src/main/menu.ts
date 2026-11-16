@@ -4,14 +4,14 @@ import type { MainPanelTab } from '../shared/api'
 
 export interface MenuDeps {
   getTray: () => Tray | null
-  /** 点击「⚙️ 设置」/「🏆 排行榜」：打开（或聚焦）主面板并切到对应 tab */
+  /** 点击「⚙️ 设置」/「🏆 排行榜」/「🏅 成就」：打开（或聚焦）主面板并切到对应 tab */
   openMainPanel: (tab: MainPanelTab) => void
 }
 
 /**
  * 菜单模块：托盘菜单的唯一属主。
- * 菜单固定三项：设置 / 排行榜（deep-link 主面板 tab）与退出；
- * 不承担任何设置与窗口管理功能（ADR 0005）。
+ * 菜单固定四项：设置 / 排行榜 / 成就（deep-link 主面板 tab）与退出；
+ * 不承担任何设置与窗口管理功能（ADR 0005 / ADR 0009）。
  */
 export function createMenuModule(deps: MenuDeps) {
   function updateTrayMenu(): void {
@@ -20,6 +20,7 @@ export function createMenuModule(deps: MenuDeps) {
     tray.setContextMenu(Menu.buildFromTemplate([
       { label: '⚙️ 设置', click: () => deps.openMainPanel('settings') },
       { label: '🏆 排行榜', click: () => deps.openMainPanel('leaderboard') },
+      { label: '🏅 成就', click: () => deps.openMainPanel('achievements') },
       { type: 'separator' },
       { label: '❌ 退出', click: () => app.quit() }
     ]))

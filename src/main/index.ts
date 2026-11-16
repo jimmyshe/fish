@@ -4,12 +4,14 @@ import { is } from '@electron-toolkit/utils'
 import { createMenuModule } from './menu'
 import { createConfigStore, type ConfigStore } from './config'
 import { poopStore } from './poopStore'
+import { achievementStore } from './achievementStore'
 import { createAuthModule, type AuthModule } from './auth'
 import { createReporter, type Reporter } from './reporter'
 import { createApiClient, type ApiClient } from './apiClient'
 import { startGlobalMouseTracking, stopGlobalMouseTracking } from './globalMouse'
 import { startAlwaysOnTopWatchdog } from './alwaysOnTop'
 import type { Config, Poop } from '../shared/config'
+import type { AchievementEvent } from '../shared/achievements'
 import type { MainPanelTab } from '../shared/api'
 import trayIconUrl from './tray-icon.png?inline'
 import appIconUrl from './app-icon.png?inline'
@@ -163,16 +165,32 @@ ipcMain.on('set-global-mouse-tracking', (_event, enabled: boolean) => {
 })
 
 // 物种与调色：主进程不透明持久化（注册表归 renderer 属主，ADR 0008）
-ipcMain.handle('set-species-id', (_event, speciesId: string) => {
-  configStore.set({ speciesId })
+ipcMain.handle('set-species-id', (_event, speciesId: string, paletteId?: string) => {
+  const patch = paletteId !== undefined ? { speciesId, paletteId, skinId: paletteId } : { speciesId }
+  const updated = configStore.set(patch)
+  achievementStore.record({
+    type: 'skin',
+    speciesId: updated?.speciesId ?? speciesId,
+    paletteId: updated?.paletteId ?? paletteId ?? updated?.skinId ?? 'default'
+  })
 })
 
 ipcMain.handle('set-palette-id', (_event, paletteId: string) => {
-  configStore.set({ paletteId, skinId: paletteId })
+  const updated = configStore.set({ paletteId, skinId: paletteId })
+  achievementStore.record({
+    type: 'skin',
+    speciesId: updated?.speciesId ?? 'classic-fish',
+    paletteId: updated?.paletteId ?? paletteId
+  })
 })
 
 ipcMain.handle('set-skin-id', (_event, skinId: string) => {
-  configStore.set({ skinId, paletteId: skinId })
+  const updated = configStore.set({ skinId, paletteId: skinId })
+  achievementStore.record({
+    type: 'skin',
+    speciesId: updated?.speciesId ?? 'classic-fish',
+    paletteId: updated?.paletteId ?? skinId
+  })
 })
 
 ipcMain.on('set-poop-enabled', (_event, enabled: boolean) => {
@@ -223,9 +241,30 @@ ipcMain.handle('get-me', () => apiClient.getMe())
 ipcMain.handle('get-leaderboard', () => apiClient.getLeaderboard())
 ipcMain.handle('set-show-on-leaderboard', (_event, show: boolean) => apiClient.setShowOnLeaderboard(show))
 
+// 本地成就系统：读与事件求值（ADR 0009）
+ipcMain.handle('get-achievements', () => achievementStore.get())
+ipcMain.handle('record-achievement-events', (_event, events: AchievementEvent | AchievementEvent[]) => {
+  return achievementStore.record(events).newlyUnlocked
+})
+
 app.whenReady().then(async () => {
   // 排泄物存储：初始化并触发向下兼容迁移（userData 路径此时已可用）
   poopStore.load()
+
+  // 本地成就存储：初始化并注入全窗口广播回调（ADR 0009）
+  achievementStore.load()
+  achievementStore.setCallbacks({
+    onChanged: (state) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('achievements-changed', state)
+      }
+    },
+    onUnlocked: (unlocked) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        win.webContents.send('achievement-unlocked', unlocked)
+      }
+    }
+  })
 
   // 配置模块在 app 就绪后创建（userData 路径此时才可用）；
   // onChanged：配置同步的唯一缝隙，set 即广播完整 Config 给所有窗口
@@ -240,6 +279,14 @@ app.whenReady().then(async () => {
   app.on('will-quit', () => {
     configStore.flush()
     poopStore.flush()
+    achievementStore.flush()
+  })
+
+  const initialConfig = configStore.get()
+  achievementStore.record({
+    type: 'skin',
+    speciesId: initialConfig.speciesId ?? 'classic-fish',
+    paletteId: initialConfig.paletteId ?? initialConfig.skinId ?? 'default'
   })
 
   // auth 模块：token 经 safeStorage 加密存 userData/auth.json（独立于明文 config.json）

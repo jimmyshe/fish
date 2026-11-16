@@ -1,5 +1,5 @@
 <template>
-  <!-- 主面板：设置 + 排行榜的唯一 UI 归属；普通 OS 窗口，拖动/关闭由 OS 负责 -->
+  <!-- 主面板：设置 + 排行榜 + 成就的唯一 UI 归属；普通 OS 窗口，拖动/关闭由 OS 负责 -->
   <div class="main-panel">
     <nav class="tab-bar">
       <button
@@ -12,10 +12,16 @@
         :class="{ active: tab === 'leaderboard' }"
         @click="tab = 'leaderboard'"
       >🏆 排行榜</button>
+      <button
+        class="tab-btn"
+        :class="{ active: tab === 'achievements' }"
+        @click="tab = 'achievements'"
+      >🏅 成就</button>
     </nav>
     <main class="tab-content">
       <SettingsTab v-if="tab === 'settings'" />
-      <LeaderboardTab v-else />
+      <LeaderboardTab v-else-if="tab === 'leaderboard'" />
+      <AchievementsTab v-else />
     </main>
   </div>
 </template>
@@ -25,6 +31,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import type { MainPanelTab } from '../../../shared/api'
 import SettingsTab from './SettingsTab.vue'
 import LeaderboardTab from './LeaderboardTab.vue'
+import AchievementsTab from './AchievementsTab.vue'
 
 // 初始 tab 来自打开时的 ?tab= 查询参数；窗口已打开时托盘再点经 panel-switch-tab 推送切换
 const tab = ref<MainPanelTab>('settings')
@@ -32,7 +39,7 @@ let unsubscribeSwitch: (() => void) | null = null
 
 onMounted(() => {
   const initial = new URLSearchParams(location.search).get('tab')
-  if (initial === 'settings' || initial === 'leaderboard') {
+  if (initial === 'settings' || initial === 'leaderboard' || initial === 'achievements') {
     tab.value = initial
   }
   if (window.api) {

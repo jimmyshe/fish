@@ -3,6 +3,7 @@ import type { Poop } from '../shared/config'
 
 const {
   mockPoopStore,
+  mockAchievementStore,
   mockConfigStoreInstance,
   ipcHandles,
   ipcListeners,
@@ -19,6 +20,17 @@ const {
     load: vi.fn(() => []),
     get: vi.fn(() => []),
     set: vi.fn((poops: unknown[]) => poops),
+    flush: vi.fn()
+  }
+
+  const mockAchievementStore = {
+    load: vi.fn(),
+    get: vi.fn(() => ({
+      stats: { scoopCount: 0, tapCount: 0, waterCount: 0, visitedSkins: ['classic-fish:default'] },
+      unlocked: {}
+    })),
+    record: vi.fn(() => ({ state: {}, newlyUnlocked: [], changed: false })),
+    setCallbacks: vi.fn(),
     flush: vi.fn()
   }
 
@@ -99,6 +111,7 @@ const {
 
   return {
     mockPoopStore,
+    mockAchievementStore,
     mockConfigStoreInstance,
     ipcHandles,
     ipcListeners,
@@ -127,6 +140,11 @@ vi.mock('./tray-icon.png?inline', () => ({
 vi.mock('./poopStore', () => ({
   poopStore: mockPoopStore,
   default: mockPoopStore
+}))
+
+vi.mock('./achievementStore', () => ({
+  achievementStore: mockAchievementStore,
+  default: mockAchievementStore
 }))
 
 vi.mock('./config', () => ({
@@ -206,7 +224,7 @@ describe('Main Process Poop IPC & Lifecycle Routing (#10)', () => {
     expect(mockConfigStoreInstance.set).not.toHaveBeenCalled()
   })
 
-  it('应用就绪 app.whenReady() 时触发 poopStore.load()（初始化排泄物并触发兼容迁移）', async () => {
+  it('应用就绪 app.whenReady() 时触发 poopStore.load() 与 achievementStore.load()', async () => {
     const whenReady = getWhenReadyCallback()
     expect(whenReady).toBeDefined()
     if (whenReady) {
@@ -214,9 +232,11 @@ describe('Main Process Poop IPC & Lifecycle Routing (#10)', () => {
     }
 
     expect(mockPoopStore.load).toHaveBeenCalled()
+    expect(mockAchievementStore.load).toHaveBeenCalled()
+    expect(mockAchievementStore.setCallbacks).toHaveBeenCalled()
   })
 
-  it('应用退出 app.on(will-quit) 时触发 poopStore.flush()', async () => {
+  it('应用退出 app.on(will-quit) 时触发 poopStore.flush() 与 achievementStore.flush()', async () => {
     const whenReady = getWhenReadyCallback()
     if (whenReady) {
       await whenReady()
@@ -229,6 +249,25 @@ describe('Main Process Poop IPC & Lifecycle Routing (#10)', () => {
       willQuitHandler({} as never)
       expect(mockPoopStore.flush).toHaveBeenCalled()
       expect(mockConfigStoreInstance.flush).toHaveBeenCalled()
+      expect(mockAchievementStore.flush).toHaveBeenCalled()
     }
+  })
+
+  it('注册成就系统 IPC 并支持原子切换物种与调色方案', async () => {
+    expect(ipcHandles.has('get-achievements')).toBe(true)
+    expect(ipcHandles.has('record-achievement-events')).toBe(true)
+
+    const setSpecies = ipcHandles.get('set-species-id')!
+    await setSpecies({} as never, 'orca', 'default')
+    expect(mockConfigStoreInstance.set).toHaveBeenCalledWith({
+      speciesId: 'orca',
+      paletteId: 'default',
+      skinId: 'default'
+    })
+    expect(mockAchievementStore.record).toHaveBeenCalledWith({
+      type: 'skin',
+      speciesId: 'orca',
+      paletteId: 'default'
+    })
   })
 })

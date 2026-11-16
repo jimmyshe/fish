@@ -38,13 +38,13 @@ describe('menu module', () => {
     vi.clearAllMocks()
   })
 
-  it('托盘菜单固定三项：设置 / 排行榜 / 退出', () => {
+  it('托盘菜单固定四项：设置 / 排行榜 / 成就 / 退出', () => {
     const { deps } = makeDeps()
     const menu = createMenuModule(deps)
     menu.updateTrayMenu()
 
     const labels = lastTemplate().map(i => i.label)
-    expect(labels).toEqual(['⚙️ 设置', '🏆 排行榜', undefined, '❌ 退出'])
+    expect(labels).toEqual(['⚙️ 设置', '🏆 排行榜', '🏅 成就', undefined, '❌ 退出'])
     expect(mocks.setContextMenu).toHaveBeenCalledTimes(1)
   })
 
@@ -68,6 +68,17 @@ describe('menu module', () => {
     ;(item.click as () => void)()
 
     expect(openMainPanel).toHaveBeenCalledWith('leaderboard')
+  })
+
+  it('「🏅 成就」打开主面板成就 tab', () => {
+    const { deps, openMainPanel } = makeDeps()
+    const menu = createMenuModule(deps)
+    menu.updateTrayMenu()
+
+    const item = lastTemplate().find(i => i.label === '🏅 成就')!
+    ;(item.click as () => void)()
+
+    expect(openMainPanel).toHaveBeenCalledWith('achievements')
   })
 
   it('「❌ 退出」退出应用', () => {

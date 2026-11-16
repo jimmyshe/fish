@@ -148,8 +148,7 @@ function onSpeciesChange(newSpeciesId: string): void {
   const sp = resolveSpecies(newSpeciesId)
   paletteId.value = sp.defaultPaletteId
   if (window.api) {
-    void window.api.setSpeciesId(newSpeciesId)
-    void window.api.setPaletteId(sp.defaultPaletteId)
+    void window.api.setSpeciesId(newSpeciesId, sp.defaultPaletteId)
   }
 }
 

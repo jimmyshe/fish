@@ -1,4 +1,5 @@
 import type { Config, Poop } from './config'
+import type { AchievementDef, AchievementEvent, AchievementState } from './achievements'
 
 /** 屏幕坐标点（游乐场窗口覆盖整个主屏且位于 (0,0)，client 坐标即屏幕坐标） */
 export interface ScreenPoint {
@@ -7,7 +8,7 @@ export interface ScreenPoint {
 }
 
 /** 主面板 tab：托盘菜单深链与 panel-switch-tab 推送共用的载荷类型 */
-export type MainPanelTab = 'settings' | 'leaderboard'
+export type MainPanelTab = 'settings' | 'leaderboard' | 'achievements'
 
 /** 登录状态：主进程 auth 模块为唯一属主，renderer 经 IPC 拉取/订阅 */
 export interface AuthState {
@@ -53,8 +54,8 @@ export interface Api {
   setClickThrough: (ignore: boolean) => void
   /** 开关全局鼠标追踪（主进程即时 start/stop 钩子） */
   setGlobalMouseTracking: (enabled: boolean) => void
-  /** 设置物种 id（即时生效；同步回执走 config-changed 广播，ADR 0008） */
-  setSpeciesId: (speciesId: string) => Promise<void>
+  /** 设置物种 id（可选同时原子更新调色方案 id；同步回执走 config-changed 广播，ADR 0008） */
+  setSpeciesId: (speciesId: string, paletteId?: string) => Promise<void>
   /** 设置调色方案 id（即时生效；同步回执走 config-changed 广播，ADR 0008） */
   setPaletteId: (paletteId: string) => Promise<void>
   /** 设置皮肤 id（兼容老版本方法，等价于 setPaletteId） */
@@ -90,6 +91,14 @@ export interface Api {
   getLeaderboard: () => Promise<LeaderboardResponse | null>
   /** 设置上榜开关（opt-out 存服务器）；失败静默，调用方重新 getMe 取权威值 */
   setShowOnLeaderboard: (show: boolean) => Promise<void>
+  /** 读取本地成就状态（统计进度与已解锁记录） */
+  getAchievements: () => Promise<AchievementState>
+  /** 上报成就事件流，返回本次新解锁的成就列表 */
+  recordAchievementEvents: (events: AchievementEvent | AchievementEvent[]) => Promise<AchievementDef[]>
+  /** 订阅本地成就状态变化（主→渲染广播），返回取消订阅函数 */
+  onAchievementsChanged: (callback: (state: AchievementState) => void) => () => void
+  /** 订阅新成就解锁通知（用于游乐场小鱼气泡与粒子庆祝），返回取消订阅函数 */
+  onAchievementUnlocked: (callback: (unlocked: AchievementDef[]) => void) => () => void
   /** 订阅全局鼠标移动（主进程 30Hz 节流推送），返回取消订阅函数 */
   onGlobalMouseMove: (callback: (pos: ScreenPoint) => void) => () => void
   /** 订阅全局鼠标点击（不节流），返回取消订阅函数 */

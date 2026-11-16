@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { Api, AuthState, LeaderboardResponse, MainPanelTab, MeResponse, ScreenPoint } from '../shared/api'
 import type { Config, Poop } from '../shared/config'
+import type { AchievementDef, AchievementEvent, AchievementState } from '../shared/achievements'
 
 const api: Api = {
   getConfig: (): Promise<Config> => {
@@ -30,8 +31,8 @@ const api: Api = {
   setGlobalMouseTracking: (enabled: boolean): void => {
     ipcRenderer.send('set-global-mouse-tracking', enabled)
   },
-  setSpeciesId: (speciesId: string): Promise<void> => {
-    return ipcRenderer.invoke('set-species-id', speciesId)
+  setSpeciesId: (speciesId: string, paletteId?: string): Promise<void> => {
+    return ipcRenderer.invoke('set-species-id', speciesId, paletteId)
   },
   setPaletteId: (paletteId: string): Promise<void> => {
     return ipcRenderer.invoke('set-palette-id', paletteId)
@@ -90,6 +91,22 @@ const api: Api = {
   },
   setShowOnLeaderboard: (show: boolean): Promise<void> => {
     return ipcRenderer.invoke('set-show-on-leaderboard', show)
+  },
+  getAchievements: (): Promise<AchievementState> => {
+    return ipcRenderer.invoke('get-achievements')
+  },
+  recordAchievementEvents: (events: AchievementEvent | AchievementEvent[]): Promise<AchievementDef[]> => {
+    return ipcRenderer.invoke('record-achievement-events', events)
+  },
+  onAchievementsChanged: (callback: (state: AchievementState) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, state: AchievementState): void => callback(state)
+    ipcRenderer.on('achievements-changed', handler)
+    return () => ipcRenderer.removeListener('achievements-changed', handler)
+  },
+  onAchievementUnlocked: (callback: (unlocked: AchievementDef[]) => void): (() => void) => {
+    const handler = (_event: IpcRendererEvent, unlocked: AchievementDef[]): void => callback(unlocked)
+    ipcRenderer.on('achievement-unlocked', handler)
+    return () => ipcRenderer.removeListener('achievement-unlocked', handler)
   },
   onGlobalMouseMove: (callback: (pos: ScreenPoint) => void): (() => void) => {
     const handler = (_event: IpcRendererEvent, pos: ScreenPoint): void => callback(pos)

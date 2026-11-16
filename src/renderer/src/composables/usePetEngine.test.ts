@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { usePetEngine, hitInteractiveAt } from './usePetEngine'
 import { createPetEngine } from '../lib/petEngine'
 import { PetScheduler } from './PetScheduler'
+import { ACHIEVEMENT_LIST } from '../../../shared/achievements'
 
 describe('usePetEngine Composable (Ticket #8)', () => {
   let scheduler: PetScheduler
@@ -100,6 +101,12 @@ describe('usePetEngine Composable (Ticket #8)', () => {
     expect(effectiveMood.value).toBe('sleeping')
     expect(displayMessage.value).toBe('Z z z ...')
     expect(displaySubMessage.value).toBe('（睡着了，别吵我）')
+
+    // Achievement celebration bubble takes priority even while sleeping
+    const sleepPoopDef = ACHIEVEMENT_LIST.find((a) => a.id === 'sleep-poop')!
+    engine.celebrateAchievements([sleepPoopDef])
+    expect(displayMessage.value).toBe('🏅 解锁成就：【梦游仙境】')
+    expect(displaySubMessage.value).toBe('')
   })
 
   it('hitInteractiveAt handles environments without document gracefully', () => {
