@@ -49,7 +49,8 @@
     "test": "vitest run",
     "typecheck": "vue-tsc --noEmit",
     "check:timers": "node scripts/check-timers.mjs",
-    "check": "npm run typecheck && npm run check:timers",
+    "check:version": "node scripts/check-version.mjs",
+    "check": "npm run typecheck && npm run check:timers && npm run check:version",
     "generate:icons": "node scripts/generate-icons.mjs",
     "generate:tray-icon": "node scripts/generate-icons.mjs"
   },

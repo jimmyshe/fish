@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, ref } from 'vue'
+import { getCurrentInstance, onMounted, onUnmounted, ref } from 'vue'
 
 export interface UseDragOptions {
   /** 按下与抬起位移小于阈值时触发（点击而非拖拽） */
@@ -55,14 +55,16 @@ export function useDrag({ onTap, onMouseMove, onDragMove, onDragEnd }: UseDragOp
     isDragging.value = false
   }
 
-  onMounted(() => {
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-  })
-  onUnmounted(() => {
-    document.removeEventListener('mousemove', handleMouseMove)
-    document.removeEventListener('mouseup', handleMouseUp)
-  })
+  if (getCurrentInstance()) {
+    onMounted(() => {
+      document.addEventListener('mousemove', handleMouseMove)
+      document.addEventListener('mouseup', handleMouseUp)
+    })
+    onUnmounted(() => {
+      document.removeEventListener('mousemove', handleMouseMove)
+      document.removeEventListener('mouseup', handleMouseUp)
+    })
+  }
 
   return { isDragging, startDrag }
 }

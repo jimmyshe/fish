@@ -5,71 +5,59 @@
 - `npm run dev` — Start development server (electron-vite dev)
 - `npm run build` — Build for production (electron-vite build)
 - `npm run dist` — Build and package into installable (electron-vite build && electron-builder)
-- `npm run check` — 静态检查全套（`npm run typecheck && npm run check:timers`）
+- `npm run check` — 静态检查全套（`npm run typecheck && npm run check:timers && npm run check:version`）
 - `npm run typecheck` — 运行 vue-tsc 类型检查（`vue-tsc --noEmit`）
 - `npm run check:timers` — 检查渲染层禁止裸调 setTimeout/setInterval 规则
+- `npm run check:version` — 校验 `package.json`、`package-lock.json`、`README.md` 与 `v*` tag 版本号一致
 - `npm run generate:icons` — 生成全套应用图标（Windows .ico、Linux .png、托盘与窗口图标）
 - `npm test` — Run unit tests (vitest, fake timers)
 - `cd server && uv run pytest` — 后端单元测试（pytest + respx stub JWKS）
 - `cd server && uv run uvicorn app.main:create_app --factory` — 本地启动后端（需先配好环境变量，见 `server/.env.example`）
-- *Git Worktree 依赖复用*: 新建 worktree 时可通过目录联接秒级复用主目录依赖：`cmd /c mklink /J node_modules <path-to-main-node_modules>`（注意：Windows 路径必须严格使用大写盘符如 `C:\...`，以保持与 Node 26 ESM 模块解析 URL 大小写一致，防止双重实例导致 Vitest 等工具状态丢失）
+- *Git Worktree 依赖复用*: 新建 worktree 时可通过目录联接秒级复用主目录依赖：`cmd /c mklink /J node_modules <path-to-main-node_modules>`（Windows 路径必须严格使用大写盘符如 `C:\...`，以保持与 Node 26 ESM 模块解析 URL 大小写一致，防止双重实例导致 Vitest 状态丢失）
 
 ## Project Structure
 
 ```
 src/
-├── main/          # Electron main process (playground window, 主面板 window, tray, IPC, config persistence, global mouse hook, auth 登录)
+├── main/          # Electron main process (playground window, 主面板, tray, IPC, stores, global mouse hook, auth)
 ├── preload/       # Context-isolated API bridge (window.api)
-└── renderer/      # Vue 3 frontend
-    ├── components/    # DesktopPet.vue (纯视觉外壳 < 200 行); MainPanel/SettingsTab/LeaderboardTab
-    ├── composables/   # usePetEngine (引擎响应式桥接与生命周期), PetScheduler (定时调度属主), useDrag
-    ├── lib/           # petEngine (行为决策仲裁+运动模拟), behaviorTree (纯函数组合子), fishMotion, skins, poop
-    └── styles/        # base.css, desktopPet.css (宠物独立样式)
+├── shared/        # Cross-process contracts & domain rules (config.ts, api.ts, achievements.ts)
+└── renderer/      # Vue 3 frontend (index.html 游乐场 + panel.html 主面板)
+    └── src/
+        ├── components/    # DesktopPet.vue (纯视觉外壳), models/ (ClassicFishModel, OrcaModel), MainPanel/SettingsTab/LeaderboardTab/AchievementsTab
+        ├── composables/   # usePetEngine (引擎桥接), PetScheduler (定时调度属主), useDrag
+        ├── lib/           # petEngine (行为仲裁+运动模拟), behaviorTree, fishMotion, fishPosition, petTime, species, skins, poop
+        └── styles/        # base.css, desktopPet.css
 server/            # 铲屎计数后端（FastAPI + SQLite + uv，Python）
-├── app/           # config（环境变量）、db（sqlite3）、auth（JWKS 验签 + userinfo 取用户名）、main（FastAPI app 工厂）
+├── app/           # config（环境变量）、db（sqlite3）、auth（JWKS 验签 + userinfo）、main（FastAPI app 工厂）
 └── tests/         # pytest，唯一接缝是 HTTP API（TestClient），真 JWT + respx stub JWKS
 ```
 
-## Key Conventions
+## Key Conventions & Gotchas
 
 - **Language**: Chinese (README, code comments, UI strings)
-- **宠物引擎（PetEngine）与行为树（BehaviorTree）**: `src/renderer/src/lib/petEngine.ts` 为高层行为决策仲裁与 Steering 物理运动模拟的唯一属主（ADR 0007）。基于极简纯函数式行为树组合子（`src/renderer/src/lib/behaviorTree.ts`），严格执行 5 级根优先级：`Dragging > ScaredDash > Sleeping > PoopStraining > Roaming`；连击彩蛋与喝水提醒作为正交修饰层解耦；输出不可变快照 `BehaviorSnapshot`，按事件与定时响应式求值；`DesktopPet.vue` 退化为纯视觉外壳（< 200 行），通过 `src/renderer/src/composables/usePetEngine.ts` 响应式消费快照，DOM 事件全量委托给引擎
-- **Config persistence**: JSON stored in `app.getPath('userData')/config.json`; owned by the configStore module (`src/main/config.ts`, debounced writes, flushed on will-quit). The `Config` type and the `window.api` contract live in `src/shared/` as the single source for all three processes. `windowX/windowY` 语义为鱼元素在屏幕内的位置（不再是窗口位置）
-- **IPC**: Renderer uses `window.api` (exposed via preload); main process uses `ipcMain.handle/on`. 配置同步唯一缝隙：`configStore.set()` 是唯一写点，set 即向所有窗口广播完整 Config（`config-changed`）；renderer 一律挂载先拉 `getConfig()`、再订阅 `onConfigChanged`（DesktopPet 只挑关心的字段比对，poopEnabled 真实变化才重应用）。登录态推送：`onAuthStateChanged`（广播给所有窗口 BrowserWindow.getAllWindows()；各窗口挂载时先拉一次再订阅）。主面板 tab 切换：`panel-switch-tab`（托盘再次点击入口项时推送给已打开的主面板）。setter 通道（set-work-end-time 等）保留但不再兼任同步（不回传 Config）。fire-and-forget 上报：`reportScoop()`（renderer 铲屎时无条件调用，是否登录由主进程判断）。联网数据 invoke 型：`getMe` / `getLeaderboard` / `setShowOnLeaderboard`（未登录或失败返回 null，renderer 给占位态）
-- **Auth（登录）**: 登录态唯一属主是 `src/main/auth.ts`（openid-client v6 + PKCE + loopback 回调固定 127.0.0.1:12344，opener/safeStorage/文件路径注入便于测试）；token 经 safeStorage 加密写 `userData/auth.json`（独立于明文 config.json）；OIDC 参数为模块内常量 + env 覆盖（`POCKET_ID_ISSUER`/`FISH_OIDC_CLIENT_ID`/`FISH_API_RESOURCE`）；openid-client 是纯 ESM，electron.vite.config.ts 里 `externalizeDepsPlugin({ exclude: ['openid-client'] })` 必须保留。登录/退出入口在主面板「🏆 排行榜」tab（登录失败由 tab 内错误文案呈现，不再弹主进程对话框）
-- **联网 API（apiClient）**: `src/main/apiClient.ts`，`/me`、`/leaderboard`、`/me/preferences`（opt-out 存服务器）的唯一属主；Bearer 来自 `auth.getAccessToken()`，未登录/失败一律返回 null；`DEFAULT_API_BASE_URL` 常量（env `FISH_API_BASE_URL` 覆盖）由 reporter 共用
-- **主面板（MainPanel）**: 所有设置 + 登录 + 排行榜 UI 的唯一归属（ADR 0005）。独立 BrowserWindow（440×620、autoHideMenuBar、不可缩放、非透明非置顶），与游乐场窗口完全解耦，窗口拖动与关闭由 OS 负责；main 里 `openMainPanel(tab)` 单例：不存在则带 `?tab=` 查询参数新建，已存在则聚焦并推 `panel-switch-tab` 切 tab，关闭即销毁置 null。页面是 electron-vite 多页第二入口 `src/renderer/panel.html` + `src/panel.ts`，`MainPanel.vue` 作 tab 壳（「⚙️ 设置」/「🏆 排行榜」），子组件 `SettingsTab.vue` / `LeaderboardTab.vue`；用同一 preload，window.api 直接可用；共享样式在 `src/renderer/src/styles/base.css`。设置 tab 全部即时生效（无草稿/保存流）：下班时间、下班提示、💩 拉屎、🖱 全局鼠标追踪、🚀 开机自启动（setLoginItemSettings 在 `set-auto-launch` IPC 处理器，仅生产生效）、📌 窗口置顶（不持久化、默认开启，走 `get/set-always-on-top`，看门狗跳过逻辑不变）。排行榜 tab 轮询：挂载即拉一次 + `leaderboard-poll` 5 分钟轮询，窗口销毁即 app 卸载、PetScheduler cancelAll 自动停
-- **下班提示开关**: config `workEndReminderEnabled`（默认 true）只关气泡报时文案——心情/汗泪特效仍随下班时间变化；关闭时气泡不再常驻，只在互动消息/睡眠/喝水提醒时出现。设置入口在主面板设置 tab（即时生效），同步走 config-changed 广播
-- **点击穿透**: 游乐场窗口是纯互动层（鱼/屎/气泡），无任何面板 UI——默认全屏穿透，纯 `elementFromPoint` 命中检测驱动；`INTERACTIVE_SELECTOR` = `.fish-wrap, .bubble-wrap, .poop`；仅拖鱼期间强制不穿透以免丢 mouseup。**Linux 特例**：`setIgnoreMouseEvents` 的 `forward` 仅支持 darwin/win32，Linux 穿透时窗口收不到 mousemove，命中检测由全局鼠标钩子位置驱动（屏幕坐标减窗口原点）；因此 Linux 下「全局鼠标追踪」关闭时鱼/屎不可点，Wayland（钩子不可用）下不可点属已知限制
-- **铲屎事件上报（reporter）**: `src/main/reporter.ts`，铲屎 → `POST {FISH_API_BASE_URL}/events`（Bearer + UUID eventId 幂等键）；事件流、失败即丢弃（ADR 0003）：未登录/网络错误/4xx/5xx 一律静默，不排队不重试；`FISH_API_BASE_URL` 常量 + env 覆盖，风格同 auth.ts
-- **Poop（拉屎）**: 纯逻辑在 `src/renderer/src/lib/poop.ts`，`Poop` 类型定义在 `src/shared/config.ts`（三进程共用）；屎列表持久化由主进程 `poopStore` 独立负责（`userData/poops.json`，不再污染 config.json，Issue #3），开关 `poopEnabled`（默认 true，主面板设置 tab 切换）。屎元素是 `.playground` 的平级子元素（坐标即视口坐标），`.poop` 已加入 `INTERACTIVE_SELECTOR` 命中检测
-- **皮肤（Skin）**: 具名完整调色板（6 有效心情 × 身/尾/鳍 = 18 色值），注册表属主 `src/renderer/src/lib/skins.ts`（纯数据 + `resolveSkin` 未知 id 回退默认，colocated 测试）；`Config.skinId` 字符串由主进程不透明持久化（`set-skin-id` IPC），纯本地、不进客户端-服务器同步协议（ADR 0006）。只改 SVG 的 body/tail/fin 三个 fill，眼睛/嘴/泪汗/彩虹等特效不受影响；选择器在主面板设置 tab（色板按钮，代表色 = normal body 色，即时生效走 config-changed 广播）
-- **Auto-launch**: Only applies in production builds; silently skipped in dev mode (`is.dev`)
-- **Window**: 全屏游乐场窗口 —— frameless, transparent, always-on-top, non-resizable, `focusable: false`，覆盖整个主屏并固定于 (0,0)；默认 `setIgnoreMouseEvents(true, {forward: true})` 全屏穿透，renderer 经 `elementFromPoint` 命中检测 + `set-click-through` IPC 在光标位于鱼/UI 上时临时关闭穿透。鱼是窗口内的定位元素。置顶由 `src/main/alwaysOnTop.ts` 看门狗周期性重新声明（Windows 置顶层级会被其他置顶窗口抢占）；用户在主面板关闭置顶（isAlwaysOnTop 为 false）时看门狗自动跳过。第二窗口：主面板（见主面板条目），普通 OS 窗口，不参与穿透/置顶机制
-- **Global mouse tracking**: `src/main/globalMouse.ts`（uiohook-napi，mousemove 30Hz 节流推送，点击不节流）；config `globalMouseTracking` 开关（默认 true），主面板设置 tab 可切换；Linux Wayland 下静默降级为窗口内追踪。electron-builder 需保持 `npmRebuild: false` + `asarUnpack` uiohook-napi
-- **托盘菜单**: 固定三项——「⚙️ 设置」/「🏆 排行榜」deep-link 主面板对应 tab、「❌ 退出」（ADR 0005）；纯静态、构建后不再重建；右键菜单与「显示/隐藏」已删除
+- **领域术语与架构决策**: 概念定义见 [GLOSSARY.md](GLOSSARY.md)，架构决策见 [docs/adr/](docs/adr/)（0001 游乐场窗口、0002 Steering 漫游、0003 铲屎上报、0004 FastAPI 后端、0005 主面板、0006/0008 物种与调色解耦、0007 行为树决策、0009 本地成就）。新增宠物物种见 `.agent/skills/add-new-fish/SKILL.md`
+- **宠物引擎（PetEngine）与行为树**: `src/renderer/src/lib/petEngine.ts` 为高层行为仲裁与 Steering 物理模拟的唯一属主；根优先级 `Dragging > ScaredDash > Sleeping > PoopStraining > Roaming`，`isSleeping` / `isPooping` 与动作进出副作用统一由 `tick()` 的行为树转移钩子收口
+- **配置与持久化**: `Config` 契约与 `window.api` 位于 `src/shared/`。主进程各 store 独立落盘：`config.json`（`src/main/config.ts`，`configStore.set()` 是唯一写点并广播 `config-changed`）、`poops.json`（`poopStore`）、`achievements.json`（`achievementStore`）、`auth.json`（`safeStorage` 加密）。`windowX/windowY` 语义为鱼元素屏幕坐标而非窗口位置
+- **Auth & 构建期注入**: `openid-client` v6 为纯 ESM，`electron.vite.config.ts` 中 `externalizeDepsPlugin({ exclude: ['openid-client'] })` 必须保留；PKCE loopback 回调固定 `127.0.0.1:12344`。客户端四项服务器参数（`POCKET_ID_ISSUER`/`FISH_OIDC_CLIENT_ID`/`FISH_API_RESOURCE`/`FISH_API_BASE_URL`）通过 GitHub repo variables 在构建期烧入 bundle（ADR 0004）
+- **窗口、点击穿透与置顶**: 游乐场窗口全屏透明、`focusable: false`，默认 `setIgnoreMouseEvents(true, {forward: true})`，由 `elementFromPoint` 命中 `.fish-wrap, .bubble-wrap, .poop` 驱动；Linux 上 `forward` 无效，穿透时改由全局鼠标钩子位置驱动，关闭「全局鼠标追踪」或处于 Wayland 下不可点击属已知限制。`src/main/alwaysOnTop.ts` 看门狗在 Windows 周期重声明置顶（关闭置顶时自动跳过）
+- **原生钩子打包与平台差异**: `src/main/globalMouse.ts` 使用 `uiohook-napi`（30Hz 节流移动，点击/按键脉冲不节流），`package.json` 需保留 `npmRebuild: false` + `asarUnpack`；Linux Wayland 静默降级为窗口内追踪。开机自启动仅在生产构建生效（`is.dev` 静默跳过）
 
 ## CI / Release
 
-- CI triggers on git tags: 客户端 `v*`（如 `git tag v1.3.0 && git push --tags`），后端 `server-v*`（如 `git tag server-v1.0.0`）；两个 release job 经 `if: startsWith(github.ref, ...)` 互斥
-- Builds on Windows and Ubuntu; `electron-builder` 将产物上传到 Draft GitHub Release（`draft: true` 且无正文）。客户端发版按 `.agent/skills/release/SKILL.md` 规范执行（升级 `package.json` / `package-lock.json` / `README.md` -> 提交 `chore: bump version to X.Y.Z` -> 打 tag 并推送 -> 通过 `gh release edit/create` 写入中文 Changelog 并设 `--draft=false` 正式发布）
-- Node.js version: 26
-- test.yml 两个并列 job：vitest（Node 26）+ server pytest（astral-sh/setup-uv，`cd server && uv run pytest`）
-- release.yml 两个 job：`release`（客户端打包，仅 v* tag）+ `server-image`（仅 server-v* tag；docker/build-push-action 构建 `server/Dockerfile` 推 `ghcr.io/<repo-owner>/fish-server`，tag 为去掉 `server-` 前缀的版本号 + `latest`；构建前校验 tag 版本与 `server/pyproject.toml` 的 version 一致，不一致即 fail）
-- server 版本号唯一来源：`server/pyproject.toml` 的 `version` 字段；`GET /health` 返回 `{"status":"ok","version":"..."}`（tomllib 读 pyproject.toml，Docker 镜像里同样拷到项目根）
-- 客户端构建期注入（ADR 0004）：四个值存 GitHub repo **variables**（非 secrets）——`POCKET_ID_ISSUER`、`FISH_OIDC_CLIENT_ID`、`FISH_API_RESOURCE`、`FISH_API_BASE_URL`；release job 经 `env:` 传入，electron.vite.config.ts 的 main `define` 在构建期烧进 bundle（未设置则 `??` 落回 auth.ts/apiClient.ts 硬编码默认值；dev 模式由本地环境变量覆盖）
-- server 镜像运行：必填 env `FISH_POCKETID_ISSUER` / `FISH_API_RESOURCE`（其余见 server/.env.example）；SQLite 落 `/app/data/fish.db`，挂卷持久化。部署示例见 `server/docker-compose.yml`（compose + .env + 挂卷，反代 HTTPS 到 8000 端口）
+- CI triggers on git tags: 客户端 `v*`，后端 `server-v*`（`.github/workflows/release.yml` 两个 job 互斥）；Node.js 26
+- `electron-builder` 默认上传产物到 Draft GitHub Release，客户端与后端完整发版流程见 `.agent/skills/release/SKILL.md`
+- `server/pyproject.toml` 为后端版本号唯一来源（`GET /health` 通过 `tomllib` 读取，Docker 镜像需拷贝至根路径）；运行必填 `FISH_POCKETID_ISSUER` / `FISH_API_RESOURCE`，SQLite 挂卷 `/app/data/fish.db`（见 `server/docker-compose.yml`）
 
 ## Testing
 
-- Unit tests via vitest (`npm test`), colocated as `*.test.ts`; CI runs them on push to master and PRs (.github/workflows/test.yml)
-- 后端测试：`cd server && uv run pytest`；测试自签 RSA JWT，外部 PocketID JWKS 端点用 respx stub，不 mock 鉴权本身、不直接查库断言
-- All timer-driven behavior is owned by the PetScheduler module (src/renderer/src/composables/); new scheduled behavior registers a named timer there instead of raw setTimeout/setInterval. 由 `npm run check:timers` 自动守护
-- 静态质量守护：`npm run check`（含 vue-tsc 类型检查与 check:timers 规范检查），CI 在 test job 中自动执行
+- Unit tests via vitest (`npm test`), colocated as `*.test.ts`; CI runs `npm run check` + `npm test` + `cd server && uv run pytest` (`.github/workflows/test.yml`)
+- 渲染层定时器唯一属主为 `PetScheduler`（`src/renderer/src/composables/PetScheduler.ts`），由 `npm run check:timers` 守护
+- 后端测试自签 RSA JWT + respx stub 外部 PocketID JWKS，不 mock 鉴权本身、不直接查库断言
 
 ## Missing
 
-- No ESLint configured (guarded by vue-tsc typecheck and check:timers script)
+- No ESLint configured (guarded by `npm run check`)
 
 ## Stack
 

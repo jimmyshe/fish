@@ -388,7 +388,7 @@ export class PetEngine {
       movementIntent: ctx.movementIntent,
       isSleeping: ctx.currentAction === 'sleeping',
       isScared: this._isScared,
-      isPooping: this._isPooping,
+      isPooping: ctx.currentAction === 'pooping',
       isHovered: this._isHovered,
       isRainbow: this._isRainbow,
       showWaterReminder: this._showWaterReminder
@@ -400,6 +400,7 @@ export class PetEngine {
     this.currentSnapshot = this.evaluateSnapshot()
     const nextAction = this.currentSnapshot.currentAction
     this._isSleeping = nextAction === 'sleeping'
+    this._isPooping = nextAction === 'pooping'
 
     if (prevAction !== nextAction) {
       this.handleActionTransition(prevAction, nextAction, suppressWakeMessage)
@@ -424,6 +425,18 @@ export class PetEngine {
       if (nextAction !== 'scared' && !suppressWakeMessage) {
         this.showMessage('呼～被吵醒了...', 2000)
       }
+    }
+
+    if (prevAction !== 'pooping' && nextAction === 'pooping') {
+      this.scheduler.after('poop-drop', POOP_STRAINING_MS, () => {
+        this._isPooping = false
+        this.dropPoop('normal')
+        const msg = POOP_RELIEF_MESSAGES[Math.floor(Math.random() * POOP_RELIEF_MESSAGES.length)]
+        this.showMessage(msg, 2000)
+        this.tick()
+      })
+    } else if (prevAction === 'pooping' && nextAction !== 'pooping') {
+      this.scheduler.cancel('poop-drop')
     }
   }
 
@@ -827,18 +840,12 @@ export class PetEngine {
     if (action === 'sleeping' || action === 'scared') {
       // 梦游拉屎或受惊到点：不唤醒、无使劲动画，直接掉落
       this.dropPoop(action === 'sleeping' ? 'sleep' : 'scared')
+    } else if (action === 'dragging') {
+      this.dropPoop('normal')
     } else {
-      // 漫游中：进入使劲序列
+      // 漫游中：进入使劲序列（由行为树转移钩子挂载 poop-drop）
       this._isPooping = true
       this.tick()
-
-      this.scheduler.after('poop-drop', POOP_STRAINING_MS, () => {
-        this._isPooping = false
-        this.dropPoop('normal')
-        const msg = POOP_RELIEF_MESSAGES[Math.floor(Math.random() * POOP_RELIEF_MESSAGES.length)]
-        this.showMessage(msg, 2000)
-        this.tick()
-      })
     }
 
     if (this._poopEnabled) {
@@ -852,7 +859,6 @@ export class PetEngine {
       this.schedulePoop()
     } else {
       this.scheduler.cancel('poop')
-      this.scheduler.cancel('poop-drop')
       if (this._isPooping) {
         this._isPooping = false
         this.tick()

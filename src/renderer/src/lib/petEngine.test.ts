@@ -111,7 +111,12 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
     })
 
     it('dragging overrides pooping straining immediately', () => {
-      const engine = createPetEngine({ scheduler })
+      const onDropPoop = vi.fn()
+      const engine = createPetEngine({
+        scheduler,
+        adapter: { onDropPoop },
+        autoStartTimers: false
+      })
 
       engine.triggerPoop()
       expect(engine.getSnapshot().isPooping).toBe(true)
@@ -121,6 +126,11 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
       engine.startDrag()
       expect(engine.getSnapshot().currentAction).toBe('dragging')
       expect(engine.getSnapshot().movementIntent).toBe('user-drag')
+      expect(engine.getSnapshot().isPooping).toBe(false)
+
+      // 抢占离开 pooping 后，原 poop-drop 定时器应被取消
+      vi.advanceTimersByTime(800)
+      expect(onDropPoop).not.toHaveBeenCalled()
     })
   })
 
