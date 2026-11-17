@@ -52,7 +52,7 @@ server/            # 铲屎计数后端（FastAPI + SQLite + uv，Python）
 ## CI / Release
 
 - CI triggers on git tags: 客户端 `v*`（如 `git tag v1.3.0 && git push --tags`），后端 `server-v*`（如 `git tag server-v1.0.0`）；两个 release job 经 `if: startsWith(github.ref, ...)` 互斥
-- Builds on Windows and Ubuntu; publishes to GitHub Releases automatically
+- Builds on Windows and Ubuntu; `electron-builder` 将产物上传到 Draft GitHub Release（`draft: true` 且无正文）。客户端发版按 `.agent/skills/release/SKILL.md` 规范执行（升级 `package.json` / `package-lock.json` / `README.md` -> 提交 `chore: bump version to X.Y.Z` -> 打 tag 并推送 -> 通过 `gh release edit/create` 写入中文 Changelog 并设 `--draft=false` 正式发布）
 - Node.js version: 26
 - test.yml 两个并列 job：vitest（Node 26）+ server pytest（astral-sh/setup-uv，`cd server && uv run pytest`）
 - release.yml 两个 job：`release`（客户端打包，仅 v* tag）+ `server-image`（仅 server-v* tag；docker/build-push-action 构建 `server/Dockerfile` 推 `ghcr.io/<repo-owner>/fish-server`，tag 为去掉 `server-` 前缀的版本号 + `latest`；构建前校验 tag 版本与 `server/pyproject.toml` 的 version 一致，不一致即 fail）
