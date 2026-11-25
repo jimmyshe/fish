@@ -1,4 +1,4 @@
-# Fish Pet 🐟 `v1.12.0`
+# Fish Pet 🐟 `v1.13.0`
 
 一个基于 Electron + Vite + Vue 3 制作的趣味桌面摸鱼宠物。它会陪伴你度过忙碌的工作时光，实时显示下班倒计时，并在下班时刻准时提醒你"快跑"！
 
@@ -48,7 +48,7 @@
 - **框架**: [Electron 31](https://www.electronjs.org/) + [Vue 3](https://vuejs.org/)
 - **构建工具**: [electron-vite](https://electron-vite.org/)
 - **语言**: TypeScript
-- **测试**: Vitest（233 个单元测试）+ pytest（后端 15 个）
+- **测试**: Vitest（241 个单元测试）+ pytest（后端 15 个）
 - **打包**: electron-builder
 - **后端**: FastAPI + SQLite（`server/`，PocketID OIDC 验签，独立版本演进）
 
@@ -61,6 +61,7 @@ src/
 ├── main/          # Electron 主进程
 │   ├── index.ts   # 游乐场窗口、托盘接线、IPC 注册
 │   ├── config.ts  # configStore：配置唯一属主（去抖持久化）
+│   ├── feedShortcut.ts # 喂鱼快捷键校验与投喂按键识别
 │   ├── poopStore.ts # poopStore：屎列表独立持久化（poops.json）
 │   ├── achievementStore.ts # achievementStore：本地成就独立持久化（achievements.json）
 │   ├── menu.ts    # 菜单模块：托盘菜单（设置 / 排行榜 / 成就 / 退出）
@@ -90,6 +91,7 @@ src/
         └── lib/
             ├── behaviorTree.ts  # 行为树纯函数组合子（ADR 0007）
             ├── petEngine.ts     # 高层行为决策仲裁与运动模拟（ADR 0007）
+            ├── eating.ts        # 进食阶段与动画时长
             ├── petTime.ts       # 时间推导模块（心情阈值与文案）
             ├── fishPosition.ts  # 鱼位置纯逻辑（初始落点、屏幕收敛）
             ├── fishMotion.ts    # 运动模块：漫游/避鼠/逃窜转向力（MOTION 参数）
