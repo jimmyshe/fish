@@ -11,14 +11,15 @@ import {
 } from './achievements'
 
 describe('achievements domain module', () => {
-  it('默认状态包含 1 个初始皮肤组合，14 项成就均未解锁', () => {
+  it('默认状态包含 1 个初始皮肤组合，17 项成就均未解锁', () => {
     const state = createDefaultAchievementState()
-    expect(ACHIEVEMENT_LIST).toHaveLength(14)
+    expect(ACHIEVEMENT_LIST).toHaveLength(17)
     expect(state.stats).toEqual({
       scoopCount: 0,
       tapCount: 0,
       waterCount: 0,
       overworkCount: 0,
+      fedCount: 0,
       visitedSkins: ['classic-fish:default']
     })
     expect(state.unlocked).toEqual({})
@@ -49,6 +50,7 @@ describe('achievements domain module', () => {
         tapCount: 12,
         waterCount: 0,
         overworkCount: 0,
+        fedCount: 0,
         visitedSkins: ['classic-fish:gold']
       },
       unlocked: {
@@ -139,6 +141,25 @@ describe('achievements domain module', () => {
       'classic-fish:sakura',
       'orca:default'
     ])
+  })
+
+  it('喂鱼计入累计进度，睡着时投放的鱼粮解锁隐藏成就', () => {
+    const feed = { type: 'feed', placedWhileSleeping: false } as const
+    const first = applyAchievementEvents(createDefaultAchievementState(), feed, 1000)
+    expect(first.newlyUnlocked.map((def) => def.id)).toEqual(['feed-1'])
+    expect(getAchievementProgress(first.state, 'feed-10')).toEqual({ current: 1, target: 10 })
+
+    const breakfast = applyAchievementEvents(first.state, { ...feed, placedWhileSleeping: true }, 2000)
+    expect(breakfast.newlyUnlocked.map((def) => def.id)).toEqual(['wake-up-snack'])
+    expect(breakfast.state.stats.fedCount).toBe(2)
+
+    const tenth = applyAchievementEvents(breakfast.state, Array.from({ length: 8 }, () => feed), 3000)
+    expect(tenth.newlyUnlocked.map((def) => def.id)).toEqual(['feed-10'])
+    expect(getAchievementProgress(tenth.state, 'feed-10')).toEqual({ current: 10, target: 10 })
+
+    const extra = applyAchievementEvents(tenth.state, { ...feed, placedWhileSleeping: true }, 4000)
+    expect(extra.newlyUnlocked).toEqual([])
+    expect(extra.state.stats.fedCount).toBe(11)
   })
 
   it('隐藏成就触发：rainbow / scared-poop / sleep-poop / poop-count / time-check', () => {
@@ -249,12 +270,15 @@ describe('achievements domain module', () => {
       'water-5',
       'skin-3',
       'overwork-5',
+      'feed-1',
+      'feed-10',
       'scared-poop',
       'sleep-poop',
       'poop-hoarder',
       'off-work-rush',
       'late-overtime',
-      'weekend-worker'
+      'weekend-worker',
+      'wake-up-snack'
     ])
   })
 

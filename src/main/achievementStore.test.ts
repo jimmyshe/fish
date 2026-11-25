@@ -123,12 +123,19 @@ describe('achievementStore 模块', () => {
     store.load()
     expect(store.get()).toEqual({
       ...initial,
-      stats: { ...initial.stats, overworkCount: 0 }
+      stats: { ...initial.stats, overworkCount: 0, fedCount: 0 }
     })
 
     const res = store.record([{ type: 'scoop' }, { type: 'scoop' }], 2000)
     expect(res.newlyUnlocked.map((a) => a.id)).toEqual(['scoop-10'])
     expect(store.get().stats.scoopCount).toBe(10)
+
+    store.record({ type: 'feed', placedWhileSleeping: true }, 3000)
+    store.flush()
+    expect(store.load()).toMatchObject({
+      stats: { scoopCount: 10, fedCount: 1 },
+      unlocked: { 'scoop-1': 999, 'feed-1': 3000, 'wake-up-snack': 3000 }
+    })
   })
 
   it('单例 achievementStore 暴露完整接口', () => {

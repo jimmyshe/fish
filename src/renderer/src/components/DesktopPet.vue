@@ -1,6 +1,6 @@
 <template>
   <!-- 游乐场：覆盖整个主屏的透明层；鱼是其中的定位元素 -->
-  <div class="playground">
+  <div class="playground" :style="eatingTiming">
     <div
       class="pet-wrapper"
       :style="fishStyle"
@@ -43,8 +43,9 @@
 
     <!-- 宠物模型容器；点击/拖拽的命中区域由模型本体填充，透明 padding 一律穿透 -->
     <div
+      ref="fishWrap"
       class="fish-wrap"
-      :class="[effectiveMoodClass, { 'is-hovered': isHovered, 'is-rainbow': isRainbow, 'face-left': facingLeft, 'is-pooping': isPooping }]"
+      :class="[effectiveMoodClass, { 'is-hovered': isHovered, 'is-rainbow': isRainbow, 'face-left': facingLeft, 'is-pooping': isPooping, 'is-eating': eatingPhase }]"
       @mousedown.left="startDrag"
       @mouseenter="onFishHover"
       @mouseleave="onFishLeave"
@@ -62,6 +63,14 @@
     </div>
     </div>
 
+    <span
+      v-if="fishFood"
+      class="fish-food"
+      :class="{ 'is-being-eaten': eatingPhase === 'biting' && mouthPosition }"
+      :style="fishFoodStyle"
+      aria-hidden="true"
+    ></span>
+
     <!-- 屎层：.playground 的平级子元素，坐标即视口坐标；点击铲屎 -->
     <div
       v-for="p in poops"
@@ -76,8 +85,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { usePetEngine } from '../composables/usePetEngine'
+import { BITE_MS, CHEW_MS } from '../lib/eating'
+import type { Vec } from '../lib/fishMotion'
 import { resolveModelComponent } from './models'
 
 const {
@@ -96,6 +107,8 @@ const {
   showWaterReminder,
   comboCount,
   facingLeft,
+  fishFood,
+  eatingPhase,
   poops,
   interactMessage,
   currentSpecies,
@@ -108,6 +121,29 @@ const {
 } = usePetEngine()
 
 const activeModel = computed(() => resolveModelComponent(currentSpecies.value.modelId))
+const eatingTiming = { '--bite-duration': `${BITE_MS}ms`, '--chew-duration': `${CHEW_MS}ms` }
+const fishWrap = ref<HTMLElement | null>(null)
+const mouthPosition = ref<Vec | null>(null)
+
+watch([eatingPhase, activeModel], ([phase]) => {
+  // 等当前模型绘制张嘴的形状后再取位置，也适用于翻转朝向的小鱼。
+  const mouth = phase === 'biting'
+    ? fishWrap.value?.querySelector('[data-fish-mouth]')?.getBoundingClientRect()
+    : undefined
+  mouthPosition.value = mouth ? { x: mouth.x + mouth.width / 2, y: mouth.y + mouth.height / 2 } : null
+}, { flush: 'post' })
+
+const fishFoodStyle = computed(() => {
+  const food = fishFood.value
+  if (!food) return undefined
+  const mouth = mouthPosition.value ?? food
+  return {
+    left: `${food.x}px`,
+    top: `${food.y}px`,
+    '--bite-x': `${mouth.x - food.x}px`,
+    '--bite-y': `${mouth.y - food.y}px`
+  }
+})
 </script>
 
 <style scoped src="../styles/desktopPet.css"></style>

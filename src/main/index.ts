@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, safeStorage, screen, shell, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, globalShortcut, ipcMain, safeStorage, screen, shell, Tray, nativeImage } from 'electron'
 import { join } from 'path'
 import { is } from '@electron-toolkit/utils'
 import { createMenuModule } from './menu'
@@ -10,9 +10,10 @@ import { createReporter, type Reporter } from './reporter'
 import { createApiClient, type ApiClient } from './apiClient'
 import { startGlobalMouseTracking, stopGlobalMouseTracking } from './globalMouse'
 import { startAlwaysOnTopWatchdog } from './alwaysOnTop'
+import { normalizeFeedShortcut } from './feedShortcut'
 import type { Config, Poop } from '../shared/config'
 import type { AchievementEvent } from '../shared/achievements'
-import type { MainPanelTab } from '../shared/api'
+import type { FeedShortcutResult, MainPanelTab } from '../shared/api'
 import trayIconUrl from './tray-icon.png?inline'
 import appIconUrl from './app-icon.png?inline'
 
@@ -24,6 +25,7 @@ let mainWindow: BrowserWindow | null = null
 let mainPanelWindow: BrowserWindow | null = null
 let tray: Tray | null = null
 let appIcon: nativeImage.NativeImage | null = null
+let activeFeedShortcut: string | null = null
 
 function getAppIcon(): nativeImage.NativeImage {
   if (!appIcon) {
@@ -35,10 +37,40 @@ function getAppIcon(): nativeImage.NativeImage {
 /** 按配置开关即时 start/stop 全局鼠标钩子 */
 function applyGlobalMouseTracking(enabled: boolean): void {
   if (enabled && mainWindow) {
-    startGlobalMouseTracking(mainWindow)
+    startGlobalMouseTracking(mainWindow, () => activeFeedShortcut)
   } else {
     stopGlobalMouseTracking()
   }
+}
+
+function placeFishFoodAtCursor(): void {
+  const win = mainWindow
+  if (!win || win.isDestroyed()) return
+
+  const cursor = screen.getCursorScreenPoint()
+  const primary = screen.getPrimaryDisplay().bounds
+  if (cursor.x < primary.x || cursor.x >= primary.x + primary.width ||
+    cursor.y < primary.y || cursor.y >= primary.y + primary.height) return
+
+  const bounds = win.getContentBounds()
+  const x = cursor.x - bounds.x
+  const y = cursor.y - bounds.y
+  if (x < 0 || x >= bounds.width || y < 0 || y >= bounds.height) return
+
+  win.webContents.send('place-fish-food', { x, y })
+}
+
+function registerFeedShortcut(shortcut: string): boolean {
+  if (shortcut === activeFeedShortcut) return true
+  try {
+    if (!globalShortcut.register(shortcut, placeFishFoodAtCursor)) return false
+  } catch {
+    return false
+  }
+
+  if (activeFeedShortcut) globalShortcut.unregister(activeFeedShortcut)
+  activeFeedShortcut = shortcut
+  return true
 }
 
 /** 开机自启动：开发模式下路径不对，仅生产包生效 */
@@ -149,6 +181,16 @@ ipcMain.on('set-click-through', (_event, ignore: boolean) => {
 
 // 配置：读走 get-config；所有写经 configStore.set 合并，同步回执走 config-changed 广播
 ipcMain.handle('get-config', () => configStore.get())
+
+ipcMain.handle('get-feed-shortcut-registered', () => activeFeedShortcut !== null)
+ipcMain.handle('set-feed-shortcut', (_event, input: unknown): FeedShortcutResult => {
+  const shortcut = normalizeFeedShortcut(input)
+  if (!shortcut) return 'invalid'
+  // 新快捷键注册成功后才替换旧绑定及落盘配置。
+  if (!registerFeedShortcut(shortcut)) return 'unavailable'
+  if (configStore.get().feedShortcut !== shortcut) configStore.set({ feedShortcut: shortcut })
+  return 'ok'
+})
 
 ipcMain.handle('get-fish-position', () => {
   const { windowX, windowY } = configStore.get()
@@ -290,6 +332,10 @@ app.whenReady().then(async () => {
     }
   })
   app.on('will-quit', () => {
+    if (activeFeedShortcut) {
+      globalShortcut.unregister(activeFeedShortcut)
+      activeFeedShortcut = null
+    }
     configStore.flush()
     poopStore.flush()
     achievementStore.flush()
@@ -325,6 +371,8 @@ app.whenReady().then(async () => {
 
   createWindow()
   createTray()
+  const feedShortcut = normalizeFeedShortcut(initialConfig.feedShortcut)
+  if (feedShortcut) registerFeedShortcut(feedShortcut)
 
   // 启动恢复持久化登录态：有 session 则 refresh 续期，失败静默退回未登录
   await auth.load()

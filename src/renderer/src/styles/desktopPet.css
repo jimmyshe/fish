@@ -257,3 +257,25 @@
   transition: transform 0.15s ease;
 }
 .poop:hover { transform: translate(-50%, -50%) scale(1.15); }
+
+.fish-food {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  box-sizing: border-box;
+  transform: translate(-50%, -50%);
+  border: 1px solid #713d20;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #fff0b0, #dd984e 55%, #ad5d33);
+  box-shadow: 0 1px 4px rgb(0 0 0 / 40%);
+  pointer-events: none;
+}
+
+.fish-wrap.is-eating .fish-svg { animation: none !important; }
+
+.fish-food.is-being-eaten { animation: slide-into-mouth var(--bite-duration) ease-in-out both; }
+
+@keyframes slide-into-mouth {
+  0%, 12% { transform: translate(-50%, -50%) scale(1); }
+  90%, 100% { transform: translate(-50%, -50%) translate(var(--bite-x), var(--bite-y)) scale(0.25); }
+}

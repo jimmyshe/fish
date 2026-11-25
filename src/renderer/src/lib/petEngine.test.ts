@@ -8,9 +8,11 @@ import {
   createRoamingAction
 } from './petEngine'
 import { PetScheduler } from '../composables/PetScheduler'
+import { MOTION } from './fishMotion'
+import { BITE_MS, CHEW_MS } from './eating'
 import { ACHIEVEMENT_LIST } from '../../../shared/achievements'
 
-describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
+describe('PetEngine - Priority Decision Arbiter', () => {
   let scheduler: PetScheduler
 
   beforeEach(() => {
@@ -37,6 +39,8 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
         isHovered: false,
         isRainbow: false,
         showWaterReminder: false,
+        fishFood: null,
+        eatingPhase: null,
       })
     })
 
@@ -51,6 +55,7 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
         isScared: false,
         isSleeping: false,
         isPooping: false,
+        isEating: false,
         currentAction: 'roaming' as const,
         movementIntent: 'roam' as const
       }
@@ -131,6 +136,127 @@ describe('PetEngine - 5-level Priority Decision Arbiter (Ticket #6)', () => {
       // 抢占离开 pooping 后，原 poop-drop 定时器应被取消
       vi.advanceTimersByTime(800)
       expect(onDropPoop).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('喂鱼', () => {
+    it('合嘴时吞下鱼粮，嚼完才冒泡并恢复漫游', () => {
+      const onAchievementEvents = vi.fn()
+      const engine = createPetEngine({
+        scheduler,
+        adapter: { onAchievementEvents },
+        autoStartTimers: false,
+        initialFishPos: { x: 350, y: 250 }
+      })
+      const food = { x: 600, y: 350 }
+      const nextFood = { x: 850, y: 350 }
+      engine.placeFishFood(food)
+      engine.swimTick(1000)
+
+      vi.advanceTimersByTime(BITE_MS - 1)
+      expect(engine.getSnapshot()).toMatchObject({ eatingPhase: 'biting', fishFood: food })
+      expect(onAchievementEvents).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(1)
+      expect(engine.getSnapshot()).toMatchObject({ eatingPhase: 'chewing', fishFood: null })
+      expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'feed', placedWhileSleeping: false }])
+      expect(engine.interactMessage).toBe('')
+
+      engine.placeFishFood(nextFood)
+      engine.swimTick(1033)
+      expect(engine.getSnapshot()).toMatchObject({ eatingPhase: 'chewing', fishFood: nextFood })
+      expect(engine.fishPos).toEqual({ x: 350, y: 250 })
+
+      vi.advanceTimersByTime(CHEW_MS)
+      expect(engine.getSnapshot()).toMatchObject({ currentAction: 'roaming', eatingPhase: null, fishFood: nextFood })
+      expect(engine.interactMessage).toContain('谢谢投喂')
+      expect(onAchievementEvents).toHaveBeenCalledTimes(1)
+      engine.swimTick(1066)
+      expect(engine.fishPos.x).toBeGreaterThan(350)
+    })
+
+    it('吞下前换粮会立即中止原来的咬合', () => {
+      const onAchievementEvents = vi.fn()
+      const engine = createPetEngine({
+        scheduler,
+        adapter: { onAchievementEvents },
+        autoStartTimers: false,
+        initialFishPos: { x: 350, y: 250 }
+      })
+      engine.placeFishFood({ x: 600, y: 350 })
+      engine.swimTick(1000)
+
+      const nextFood = { x: 850, y: 350 }
+      engine.placeFishFood(nextFood)
+      engine.swimTick(1033)
+      vi.advanceTimersByTime(BITE_MS + CHEW_MS)
+
+      expect(engine.getSnapshot()).toMatchObject({ currentAction: 'roaming', eatingPhase: null, fishFood: nextFood })
+      expect(engine.fishPos.x).toBeGreaterThan(350)
+      expect(engine.interactMessage).toBe('')
+      expect(onAchievementEvents).not.toHaveBeenCalled()
+    })
+
+    it('拖拽中断咬合时保留鱼粮，受惊中断咀嚼时不恢复食物', () => {
+      const engine = createPetEngine({ scheduler, autoStartTimers: false, poopEnabled: false, initialFishPos: { x: 350, y: 250 } })
+      const food = { x: 600, y: 350 }
+      engine.placeFishFood(food)
+      engine.swimTick(1000)
+      engine.startDrag()
+      vi.advanceTimersByTime(BITE_MS + CHEW_MS)
+      expect(engine.getSnapshot()).toMatchObject({ currentAction: 'dragging', eatingPhase: null, fishFood: food })
+
+      engine.endDrag()
+      engine.swimTick(1033)
+      vi.advanceTimersByTime(BITE_MS)
+      expect(engine.getSnapshot().eatingPhase).toBe('chewing')
+
+      engine.triggerScared()
+      vi.advanceTimersByTime(CHEW_MS)
+      expect(engine.getSnapshot()).toMatchObject({ currentAction: 'scared', eatingPhase: null, fishFood: null })
+      expect(engine.interactMessage).not.toContain('谢谢投喂')
+    })
+
+    it('睡觉时保留鱼粮，醒后游向替换后的落点并吃掉', () => {
+      const onAchievementEvents = vi.fn()
+      const engine = createPetEngine({
+        scheduler,
+        adapter: { onAchievementEvents },
+        poopEnabled: false,
+        initialFishPos: { x: 350, y: 250 }
+      })
+      const start = engine.fishPos
+
+      engine.fallAsleep()
+      engine.placeFishFood({ x: 1000, y: 300 })
+      engine.placeFishFood({ x: 400, y: 350 })
+      vi.advanceTimersByTime(2000)
+
+      expect(engine.getSnapshot().isSleeping).toBe(true)
+      expect(engine.getSnapshot().fishFood).toEqual({ x: 400, y: 350 })
+      expect(engine.fishPos).toEqual(start)
+      expect(onAchievementEvents).not.toHaveBeenCalled()
+
+      engine.wakeUp()
+      vi.advanceTimersByTime(3000)
+      expect(engine.getSnapshot().fishFood).toBeNull()
+      expect(engine.fishPos.x).toBeLessThan(start.x - 150)
+      expect(engine.interactMessage).toContain('谢谢投喂')
+      expect(onAchievementEvents).toHaveBeenCalledTimes(1)
+      expect(onAchievementEvents).toHaveBeenCalledWith([{ type: 'feed', placedWhileSleeping: true }])
+    })
+
+    it('光标留在屏幕角落的鱼粮上时也能吃到', () => {
+      const engine = createPetEngine({ scheduler, poopEnabled: false, initialFishPos: { x: 160, y: 180 } })
+      engine.handleMouseActivity(0, 0)
+      engine.placeFishFood({ x: 0, y: 0 })
+
+      for (let i = 0; i < 120 && engine.getSnapshot().fishFood; i++) {
+        vi.advanceTimersByTime(MOTION.TICK_MS)
+      }
+
+      expect(engine.getSnapshot().fishFood).toBeNull()
+      expect(engine.fishPos.x).toBeLessThan(-160)
+      expect(engine.fishPos.y).toBeLessThan(-30)
     })
   })
 

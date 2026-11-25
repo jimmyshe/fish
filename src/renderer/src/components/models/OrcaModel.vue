@@ -118,8 +118,21 @@
     />
 
     <!-- 7. 嘴巴局部表情 -->
+    <g v-if="eatingPhase === 'biting'" class="orca-bite">
+      <path data-fish-mouth d="M 94 47 Q 103 44 112 47 Q 109 59 101 56 Q 96 54 94 47 Z" fill="#1a1a2e" />
+      <path d="M 99 53 Q 105 51 108 53 Q 104 57 99 53 Z" fill="#dc8897" />
+    </g>
     <path
-      v-if="isScared"
+      v-else-if="eatingPhase === 'chewing'"
+      class="orca-gulp"
+      d="M 97 48 Q 104 54 111 48"
+      stroke="#1a1a2e"
+      stroke-width="2"
+      fill="none"
+      stroke-linecap="round"
+    />
+    <path
+      v-else-if="isScared"
       d="M 101 49 Q 104 53 107 49"
       stroke="#1a1a2e"
       stroke-width="1.8"
@@ -255,6 +268,23 @@ const eyeHighlightY = computed(() => eyeY.value - 1.4)
 </script>
 
 <style scoped>
+.orca-bite,
+.orca-gulp {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.orca-bite { animation: orca-bite var(--bite-duration) ease-in-out both; }
+.orca-gulp { animation: orca-gulp var(--chew-duration) ease-out both; }
+
+@keyframes orca-bite {
+  0%, 100% { transform: scaleY(0.17); }
+  38%, 82% { transform: scaleY(1); }
+}
+@keyframes orca-gulp {
+  0%, 100% { transform: scaleX(1); }
+  34% { transform: translateY(1px) scaleX(0.82); }
+}
+
 /* 水平尾叶上下拍打 */
 .orca-fluke {
   transform-origin: 20px 47px;

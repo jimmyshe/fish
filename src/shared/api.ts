@@ -7,6 +7,8 @@ export interface ScreenPoint {
   y: number
 }
 
+export type FeedShortcutResult = 'ok' | 'invalid' | 'unavailable'
+
 /** 主面板 tab：托盘菜单深链与 panel-switch-tab 推送共用的载荷类型 */
 export type MainPanelTab = 'settings' | 'leaderboard' | 'achievements'
 
@@ -60,6 +62,10 @@ export interface Api {
   setClickThrough: (ignore: boolean) => void
   /** 开关全局鼠标追踪（主进程即时 start/stop 钩子） */
   setGlobalMouseTracking: (enabled: boolean) => void
+  getFeedShortcutRegistered: () => Promise<boolean>
+  setFeedShortcut: (shortcut: string) => Promise<FeedShortcutResult>
+  /** 在游乐场内投放鱼粮，坐标相对于游乐场窗口 */
+  onPlaceFishFood: (callback: (pos: ScreenPoint) => void) => () => void
   /** 设置物种 id（可选同时原子更新调色方案 id；同步回执走 config-changed 广播，ADR 0008） */
   setSpeciesId: (speciesId: string, paletteId?: string) => Promise<void>
   /** 设置调色方案 id（即时生效；同步回执走 config-changed 广播，ADR 0008） */

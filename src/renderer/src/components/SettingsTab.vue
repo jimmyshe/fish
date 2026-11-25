@@ -43,6 +43,27 @@
       <span>💩 拉屎</span>
       <input v-model="poopEnabled" type="checkbox" @change="onPoopChange" />
     </label>
+    <div class="form-row">
+      <div>
+        <label for="feed-shortcut">喂鱼快捷键</label>
+        <p id="feed-shortcut-hint" class="shortcut-hint" aria-live="polite">
+          {{ feedShortcutError || (feedShortcutRegistered ? '在主屏光标处投放鱼粮' : '快捷键不可用，请更换组合') }}
+        </p>
+      </div>
+      <input
+        id="feed-shortcut"
+        v-model="feedShortcut"
+        type="text"
+        maxlength="28"
+        class="time-input shortcut-input"
+        aria-describedby="feed-shortcut-hint"
+        :placeholder="DEFAULT_FEED_SHORTCUT"
+        :disabled="savingFeedShortcut"
+        spellcheck="false"
+        @change="onFeedShortcutChange"
+        @keydown.enter.prevent="onFeedShortcutChange"
+      />
+    </div>
     <label class="form-row toggle">
       <span>🖱 全局鼠标追踪</span>
       <input v-model="globalMouseTracking" type="checkbox" @change="onMouseTrackingChange" />
@@ -102,7 +123,7 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted } from 'vue'
-import type { Config } from '../../../shared/config'
+import { DEFAULT_FEED_SHORTCUT, type Config } from '../../../shared/config'
 import { SPECIES_LIST, resolveSpecies, resolvePalette } from '../lib/species'
 
 const workStartTime = ref('09:00')
@@ -111,6 +132,11 @@ const workEndReminderEnabled = ref(true)
 const salaryTickerEnabled = ref(true)
 const dailyWage = ref(200)
 const poopEnabled = ref(true)
+const savedFeedShortcut = ref(DEFAULT_FEED_SHORTCUT)
+const feedShortcut = ref(DEFAULT_FEED_SHORTCUT)
+const feedShortcutRegistered = ref(true)
+const feedShortcutError = ref('')
+const savingFeedShortcut = ref(false)
 const globalMouseTracking = ref(true)
 const autoLaunch = ref(false)
 // 置顶不持久化（默认开启）：走独立的 get/set IPC，不在 config 广播里
@@ -130,6 +156,10 @@ function applyConfig(config: Config): void {
   salaryTickerEnabled.value = config.salaryTickerEnabled ?? true
   dailyWage.value = config.dailyWage ?? 200
   poopEnabled.value = config.poopEnabled
+  if (savedFeedShortcut.value !== config.feedShortcut) {
+    savedFeedShortcut.value = config.feedShortcut
+    feedShortcut.value = config.feedShortcut
+  }
   globalMouseTracking.value = config.globalMouseTracking
   autoLaunch.value = config.autoLaunch
   speciesId.value = config.speciesId ?? 'classic-fish'
@@ -141,8 +171,13 @@ let unsubscribeConfig: (() => void) | null = null
 onMounted(async () => {
   if (!window.api) return
   applyConfig(await window.api.getConfig())
-  alwaysOnTop.value = await window.api.getAlwaysOnTop()
   unsubscribeConfig = window.api.onConfigChanged(applyConfig)
+  const [isOnTop, isRegistered] = await Promise.all([
+    window.api.getAlwaysOnTop(),
+    window.api.getFeedShortcutRegistered()
+  ])
+  alwaysOnTop.value = isOnTop
+  feedShortcutRegistered.value = isRegistered
 })
 
 onUnmounted(() => {
@@ -175,6 +210,28 @@ function onDailyWageChange(): void {
 
 function onPoopChange(): void {
   if (window.api) window.api.setPoopEnabled(poopEnabled.value)
+}
+
+async function onFeedShortcutChange(): Promise<void> {
+  if (!window.api || savingFeedShortcut.value) return
+  savingFeedShortcut.value = true
+  feedShortcutError.value = ''
+  try {
+    const result = await window.api.setFeedShortcut(feedShortcut.value)
+    if (result === 'ok') {
+      savedFeedShortcut.value = (await window.api.getConfig()).feedShortcut
+      feedShortcutRegistered.value = true
+    } else if (result === 'invalid') {
+      feedShortcutError.value = '请用 Ctrl 或 Alt 加字母、数字或功能键'
+    } else {
+      feedShortcutError.value = '组合不可用，请换一个快捷键'
+    }
+  } catch {
+    feedShortcutError.value = '保存失败，请重试'
+  } finally {
+    feedShortcut.value = savedFeedShortcut.value
+    savingFeedShortcut.value = false
+  }
 }
 
 function onMouseTrackingChange(): void {
@@ -219,6 +276,8 @@ function onPaletteChange(newPaletteId: string): void {
 }
 .time-input:focus { border-color: #0984e3; }
 .wage-input { width: 96px; }
+.shortcut-input { width: 130px; }
+.shortcut-hint { margin: 4px 0 0; color: #636e72; font-size: 12px; }
 
 /* 物种药丸选择器 */
 .species-picker {

@@ -7,7 +7,7 @@ import {
   type BehaviorNode,
   type NodeStatus
 } from './behaviorTree'
-import { clampFishPosition, resolveInitialFishPosition } from './fishPosition'
+import { clampFishBodyPosition, clampFishPosition, FISH_BODY_CENTER, resolveInitialFishPosition } from './fishPosition'
 import {
   MOTION,
   avoidanceForce,
@@ -22,6 +22,7 @@ import {
   type Vec
 } from './fishMotion'
 import { nextPoopDelayMs, poopDropPosition, type Poop } from './poop'
+import { BITE_MS, CHEW_MS, type EatingPhase } from './eating'
 import {
   formatAchievementUnlockMessage,
   type AchievementDef,
@@ -29,7 +30,7 @@ import {
 } from '../../../shared/achievements'
 
 export type MovementIntent = 'user-drag' | 'dash' | 'paused' | 'roam'
-export type PetActionName = 'dragging' | 'scared' | 'sleeping' | 'pooping' | 'roaming'
+export type PetActionName = 'dragging' | 'scared' | 'sleeping' | 'pooping' | 'eating' | 'roaming'
 
 export interface SwimState {
   phase: 'swim' | 'pause' | 'dash'
@@ -38,6 +39,11 @@ export interface SwimState {
   angle: number
   cruise: number
   phaseLeftMs: number
+}
+
+interface FishFood {
+  position: Vec
+  placedWhileSleeping: boolean
 }
 
 export interface BehaviorSnapshot {
@@ -49,6 +55,8 @@ export interface BehaviorSnapshot {
   isHovered: boolean
   isRainbow: boolean
   showWaterReminder: boolean
+  fishFood: Vec | null
+  eatingPhase: EatingPhase
 }
 
 export interface PetEngineAdapter {
@@ -80,6 +88,7 @@ export interface TreeContext {
   isScared: boolean
   isSleeping: boolean
   isPooping: boolean
+  isEating: boolean
   currentAction: PetActionName
   movementIntent: MovementIntent
 }
@@ -129,6 +138,15 @@ export function createPetBehaviorTree(): BehaviorNode<TreeContext> {
     })
   ])
 
+  const eatingAction = sequence<TreeContext>([
+    condition((ctx) => ctx.isEating),
+    action((ctx) => {
+      ctx.currentAction = 'eating'
+      ctx.movementIntent = 'paused'
+      return 'RUNNING'
+    })
+  ])
+
   const roamingAction = createRoamingAction()
 
   return prioritySelector<TreeContext>([
@@ -136,6 +154,7 @@ export function createPetBehaviorTree(): BehaviorNode<TreeContext> {
     scaredDashAction,
     sleepingAction,
     poopStrainingSequence,
+    eatingAction,
     roamingAction
   ])
 }
@@ -219,6 +238,8 @@ export class PetEngine {
   private _fishPos: { x: number; y: number }
   private _facingLeft = false
   private _poops: Poop[] = []
+  private fishFood: FishFood | null = null
+  private eatingPhase: EatingPhase = null
   private clickThrough = true
 
   private _mousePos: Vec = { x: 0, y: 0 }
@@ -322,20 +343,17 @@ export class PetEngine {
   }
 
   moveFishBy(dx: number, dy: number): void {
-    const viewport = this.getViewportSize()
-    this._fishPos = clampFishPosition(
-      this._fishPos.x + dx,
-      this._fishPos.y + dy,
-      viewport.width,
-      viewport.height
-    )
-    this.adapter.onFishPositionChange?.(this._fishPos)
+    this.setFishPosition({ x: this._fishPos.x + dx, y: this._fishPos.y + dy })
   }
 
   setFishPosition(pos: { x: number; y: number }): void {
     const viewport = this.getViewportSize()
-    this._fishPos = clampFishPosition(pos.x, pos.y, viewport.width, viewport.height)
-    this.adapter.onFishPositionChange?.(this._fishPos)
+    this.applyFishPosition(clampFishPosition(pos.x, pos.y, viewport.width, viewport.height))
+  }
+
+  private applyFishPosition(pos: Vec): void {
+    this._fishPos = pos
+    this.adapter.onFishPositionChange?.(pos)
   }
 
   updateClickThrough(hitInteractive: boolean): void {
@@ -364,6 +382,7 @@ export class PetEngine {
       isScared: this._isScared,
       isSleeping: this._isSleeping,
       isPooping: this._isPooping,
+      isEating: this.eatingPhase !== null,
       currentAction: 'roaming',
       movementIntent: 'roam',
       ...customCtx
@@ -377,6 +396,7 @@ export class PetEngine {
       isScared: this._isScared,
       isSleeping: this._isSleeping,
       isPooping: this._isPooping,
+      isEating: this.eatingPhase !== null,
       currentAction: 'roaming',
       movementIntent: 'roam'
     }
@@ -391,7 +411,9 @@ export class PetEngine {
       isPooping: ctx.currentAction === 'pooping',
       isHovered: this._isHovered,
       isRainbow: this._isRainbow,
-      showWaterReminder: this._showWaterReminder
+      showWaterReminder: this._showWaterReminder,
+      fishFood: this.fishFood?.position ?? null,
+      eatingPhase: ctx.currentAction === 'eating' ? this.eatingPhase : null
     }
   }
 
@@ -437,6 +459,30 @@ export class PetEngine {
       })
     } else if (prevAction === 'pooping' && nextAction !== 'pooping') {
       this.scheduler.cancel('poop-drop')
+    }
+
+    if (prevAction !== 'eating' && nextAction === 'eating') {
+      this.swimState.vx = 0
+      this.swimState.vy = 0
+      this.scheduler.after('eat-bite', BITE_MS, () => {
+        const food = this.fishFood
+        this.fishFood = null
+        this.eatingPhase = 'chewing'
+        this.tick()
+        if (food) {
+          this.adapter.onAchievementEvents?.([{ type: 'feed', placedWhileSleeping: food.placedWhileSleeping }])
+        }
+      })
+      this.scheduler.after('eat-finish', BITE_MS + CHEW_MS, () => {
+        this.eatingPhase = null
+        this.tick()
+        this.showMessage('吧唧！谢谢投喂～')
+        this.adapter.onSpawnParticles?.(['🫧', '✨'], 3, 'heart')
+      })
+    } else if (prevAction === 'eating' && nextAction !== 'eating') {
+      this.scheduler.cancel('eat-bite')
+      this.scheduler.cancel('eat-finish')
+      this.eatingPhase = null
     }
   }
 
@@ -533,6 +579,56 @@ export class PetEngine {
 
   // ── Physics & Steering ──────────────────────────────
 
+  placeFishFood(pos: Vec): void {
+    const { width, height } = this.getViewportSize()
+    if (!Number.isFinite(pos.x) || !Number.isFinite(pos.y) ||
+      pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height) return
+    this.fishFood = { position: { ...pos }, placedWhileSleeping: this.currentSnapshot.isSleeping }
+    if (this.eatingPhase === 'biting') this.eatingPhase = null
+    this.tick()
+  }
+
+  private swimTowardFood(food: Vec, dt: number): void {
+    const { width, height } = this.getViewportSize()
+    const target = clampFishBodyPosition({
+      x: food.x - FISH_BODY_CENTER.x,
+      y: food.y - FISH_BODY_CENTER.y
+    }, width, height)
+    const dx = target.x - this._fishPos.x
+    const dy = target.y - this._fishPos.y
+    const distance = Math.hypot(dx, dy)
+    if (distance <= 10) {
+      this.eatingPhase = 'biting'
+      this.tick()
+      return
+    }
+
+    const speed = Math.min(MOTION.MAX_SPEED, distance * MOTION.TURN_RATE)
+    const desired = { x: dx / distance * speed, y: dy / distance * speed }
+    const velocity = integrateVelocity(
+      { x: this.swimState.vx, y: this.swimState.vy }, desired, [], dt, MOTION.MAX_SPEED, MOTION.TURN_RATE
+    )
+    this.swimState.vx = velocity.x
+    this.swimState.vy = velocity.y
+    this.applyFishPosition(clampFishBodyPosition({
+      x: this._fishPos.x + velocity.x * dt,
+      y: this._fishPos.y + velocity.y * dt
+    }, width, height))
+    this.updateFacing(velocity.x)
+  }
+
+  private moveDuringSwim(dx: number, dy: number): void {
+    const current = this._fishPos
+    const next = { x: current.x + dx, y: current.y + dy }
+    const { width, height } = this.getViewportSize()
+    const clamped = clampFishPosition(next.x, next.y, width, height)
+    // 吃完边缘的鱼粮后从当前位置游回常态范围，避免瞬移。
+    this.applyFishPosition({
+      x: Math.min(Math.max(next.x, Math.min(current.x, clamped.x)), Math.max(current.x, clamped.x)),
+      y: Math.min(Math.max(next.y, Math.min(current.y, clamped.y)), Math.max(current.y, clamped.y))
+    })
+  }
+
   private updateFacing(vx: number): void {
     const facing = computeFacing(vx, this._facingLeft ? -1 : 1, MOTION.FACE_DEADZONE)
     const nextFacingLeft = facing === -1
@@ -556,10 +652,15 @@ export class PetEngine {
       return
     }
 
+    if (intent === 'roam' && this.fishFood && this.swimState.phase !== 'dash') {
+      this.swimTowardFood(this.fishFood.position, dt)
+      return
+    }
+
     this.swimState.phaseLeftMs -= dt * 1000
 
     if (this.swimState.phase === 'dash') {
-      this.moveFishBy(this.swimState.vx * dt, this.swimState.vy * dt)
+      this.moveDuringSwim(this.swimState.vx * dt, this.swimState.vy * dt)
       this.updateFacing(this.swimState.vx)
 
       if (this.swimState.phaseLeftMs <= 0) {
@@ -614,7 +715,7 @@ export class PetEngine {
     )
     this.swimState.vx = vel.x
     this.swimState.vy = vel.y
-    this.moveFishBy(vel.x * dt, vel.y * dt)
+    this.moveDuringSwim(vel.x * dt, vel.y * dt)
 
     this.updateFacing(this.swimState.vx)
   }
@@ -843,7 +944,7 @@ export class PetEngine {
     } else if (action === 'dragging') {
       this.dropPoop('normal')
     } else {
-      // 漫游中：进入使劲序列（由行为树转移钩子挂载 poop-drop）
+      // 漫游或进食中：进入使劲序列（由行为树转移钩子挂载 poop-drop）
       this._isPooping = true
       this.tick()
     }

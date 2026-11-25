@@ -42,6 +42,7 @@ const {
       windowY: 100,
       autoLaunch: false,
       globalMouseTracking: true,
+      feedShortcut: 'Ctrl+Alt+F',
       skinId: 'default',
       poopEnabled: true
     })),
@@ -71,7 +72,9 @@ const {
         loadURL: vi.fn(),
         loadFile: vi.fn(),
         on: vi.fn(),
+        isDestroyed: vi.fn(() => false),
         isAlwaysOnTop: vi.fn(() => true),
+        getContentBounds: vi.fn(() => ({ x: 0, y: 0, width: 1920, height: 1080 })),
         webContents: { send: vi.fn() }
       })),
       {
@@ -89,9 +92,14 @@ const {
     safeStorage: {
       isEncryptionAvailable: vi.fn(() => false)
     },
+    globalShortcut: {
+      register: vi.fn((_shortcut: string, _callback: () => void) => true),
+      unregister: vi.fn()
+    },
     screen: {
+      getCursorScreenPoint: vi.fn(() => ({ x: 400, y: 700 })),
       getPrimaryDisplay: vi.fn(() => ({
-        bounds: { width: 1920, height: 1080 }
+        bounds: { x: 0, y: 0, width: 1920, height: 1080 }
       }))
     },
     shell: {
@@ -194,6 +202,36 @@ describe('Main Process Poop IPC & Lifecycle Routing (#10)', () => {
   it('注册了 get-poops 与 set-poops IPC 频道', () => {
     expect(ipcHandles.has('get-poops')).toBe(true)
     expect(ipcListeners.has('set-poops')).toBe(true)
+  })
+
+  it('喂鱼快捷键只向游乐场投放，换绑失败时保留当前绑定', async () => {
+    appEvents.get('will-quit')?.()
+    await getWhenReadyCallback()!()
+
+    const { register, unregister } = electronMock.globalShortcut
+    const [shortcut, feed] = register.mock.lastCall!
+    expect(shortcut).toBe('Ctrl+Alt+F')
+    const window = electronMock.BrowserWindow.mock.results.at(-1)!.value
+    feed()
+    expect(window.webContents.send).toHaveBeenCalledWith('place-fish-food', { x: 400, y: 700 })
+
+    window.webContents.send.mockClear()
+    electronMock.screen.getCursorScreenPoint.mockReturnValueOnce({ x: 1920, y: 700 })
+    feed()
+    expect(window.webContents.send).not.toHaveBeenCalled()
+
+    const setFeedShortcut = ipcHandles.get('set-feed-shortcut')!
+    unregister.mockClear()
+    register.mockReturnValueOnce(false)
+    expect(setFeedShortcut({}, 'Ctrl+Alt+G')).toBe('unavailable')
+    expect(unregister).not.toHaveBeenCalled()
+    expect(mockConfigStoreInstance.set).not.toHaveBeenCalled()
+
+    expect(setFeedShortcut({}, 'alt + ctrl + h')).toBe('ok')
+    expect(register).toHaveBeenLastCalledWith('Ctrl+Alt+H', expect.any(Function))
+    expect(unregister).toHaveBeenCalledWith('Ctrl+Alt+F')
+    expect(mockConfigStoreInstance.set).toHaveBeenCalledWith({ feedShortcut: 'Ctrl+Alt+H' })
+    appEvents.get('will-quit')?.()
   })
 
   it('get-poops 路由至 poopStore.get()，不再读取 configStore', async () => {

@@ -1,4 +1,5 @@
 import type { PetMood } from './petTime'
+import type { EatingPhase } from './eating'
 
 /**
  * 物种与调色方案注册表：renderer 属主（ADR 0008）。
@@ -29,6 +30,7 @@ export interface PetModelProps {
   isScared: boolean
   isSleeping: boolean
   isPooping: boolean
+  eatingPhase: EatingPhase
   isRainbow: boolean
   palette?: FishSkinPalette
 }

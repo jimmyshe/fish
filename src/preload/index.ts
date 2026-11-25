@@ -40,6 +40,13 @@ const api: Api = {
   setGlobalMouseTracking: (enabled: boolean): void => {
     ipcRenderer.send('set-global-mouse-tracking', enabled)
   },
+  getFeedShortcutRegistered: () => ipcRenderer.invoke('get-feed-shortcut-registered'),
+  setFeedShortcut: (shortcut) => ipcRenderer.invoke('set-feed-shortcut', shortcut),
+  onPlaceFishFood: (callback) => {
+    const handler = (_event: IpcRendererEvent, pos: ScreenPoint): void => callback(pos)
+    ipcRenderer.on('place-fish-food', handler)
+    return () => ipcRenderer.removeListener('place-fish-food', handler)
+  },
   setSpeciesId: (speciesId: string, paletteId?: string): Promise<void> => {
     return ipcRenderer.invoke('set-species-id', speciesId, paletteId)
   },

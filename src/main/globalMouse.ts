@@ -1,4 +1,5 @@
 import type { BrowserWindow } from 'electron'
+import { isFeedShortcutInput } from './feedShortcut'
 
 /** 全局鼠标移动推送的节流间隔（约 30Hz） */
 export const MOUSE_MOVE_INTERVAL_MS = 33
@@ -34,18 +35,19 @@ export function isGlobalMouseTrackingSupported(): boolean {
   return !(process.platform === 'linux' && process.env.XDG_SESSION_TYPE === 'wayland')
 }
 
-type Uiohook = typeof import('uiohook-napi').uIOhook
+type UiohookModule = typeof import('uiohook-napi')
 type UiohookMouseEvent = import('uiohook-napi').UiohookMouseEvent
+type UiohookKeyboardEvent = import('uiohook-napi').UiohookKeyboardEvent
 
 // undefined = 尚未尝试加载；null = 加载失败（原生模块缺失等）
-let hook: Uiohook | null | undefined
+let hook: UiohookModule | null | undefined
 
 /** 延迟加载原生模块：加载失败只告警，不影响应用启动 */
-function loadHook(): Uiohook | null {
+function loadHook(): UiohookModule | null {
   if (hook !== undefined) return hook
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    hook = (require('uiohook-napi') as typeof import('uiohook-napi')).uIOhook
+    hook = require('uiohook-napi') as UiohookModule
   } catch (error) {
     console.warn('[globalMouse] uiohook-napi 加载失败，全局鼠标追踪不可用', error)
     hook = null
@@ -56,6 +58,7 @@ function loadHook(): Uiohook | null {
 let tracking = false
 let targetWindow: BrowserWindow | null = null
 let throttledMove: ((x: number, y: number) => void) | null = null
+let getFeedShortcut: (() => string | null) | null = null
 
 function onMouseMove(e: UiohookMouseEvent): void {
   throttledMove?.(e.x, e.y)
@@ -67,7 +70,9 @@ function onMouseButton(e: UiohookMouseEvent): void {
 }
 
 /** 键盘敲击脉冲：彻底丢弃具体键码，仅推送无参敲击活动信号 */
-function onKeyDown(): void {
+function onKeyDown(event: UiohookKeyboardEvent): void {
+  const shortcut = getFeedShortcut?.()
+  if (shortcut && hook && isFeedShortcutInput(event, shortcut, hook.UiohookKey)) return
   targetWindow?.webContents.send('global-key-down')
 }
 
@@ -76,16 +81,18 @@ function onKeyDown(): void {
  * mousedown 与无键码 keydown 脉冲不节流直接推送。
  * 重复调用只换目标窗口；平台不支持或钩子失败时静默/告警降级。
  */
-export function startGlobalMouseTracking(win: BrowserWindow): void {
+export function startGlobalMouseTracking(win: BrowserWindow, feedShortcut: () => string | null): void {
   if (tracking) {
     targetWindow = win
+    getFeedShortcut = feedShortcut
     return
   }
   if (!isGlobalMouseTrackingSupported()) return
-  const uio = loadHook()
+  const uio = loadHook()?.uIOhook
   if (!uio) return
   try {
     targetWindow = win
+    getFeedShortcut = feedShortcut
     throttledMove = createMouseMoveThrottle(MOUSE_MOVE_INTERVAL_MS, (x, y) => {
       targetWindow?.webContents.send('global-mouse-move', { x, y })
     })
@@ -102,7 +109,7 @@ export function startGlobalMouseTracking(win: BrowserWindow): void {
 
 /** 完全停止全局钩子（配置开关关闭时调用） */
 export function stopGlobalMouseTracking(): void {
-  const uio = loadHook()
+  const uio = hook?.uIOhook
   if (uio) {
     try {
       uio.removeListener('mousemove', onMouseMove)
@@ -117,5 +124,6 @@ export function stopGlobalMouseTracking(): void {
   }
   tracking = false
   targetWindow = null
+  getFeedShortcut = null
   throttledMove = null
 }

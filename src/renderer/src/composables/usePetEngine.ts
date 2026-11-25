@@ -8,7 +8,7 @@ import {
   resolvePalette,
   type PetModelProps
 } from '../lib/species'
-import { resolveInitialFishPosition } from '../lib/fishPosition'
+import { clampFishPosition, resolveInitialFishPosition } from '../lib/fishPosition'
 import { serializePoops, type Poop } from '../lib/poop'
 import { useDrag } from './useDrag'
 import type { Vec } from '../lib/fishMotion'
@@ -87,11 +87,7 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         onFacingChange: (left) => {
           facingLeft.value = left
         },
-        onPersistFishPosition: (pos) => {
-          if (typeof window !== 'undefined' && window.api) {
-            window.api.setFishPosition(pos.x, pos.y)
-          }
-        },
+        onPersistFishPosition: saveFishPosition,
         onSetClickThrough: (ct) => {
           if (typeof window !== 'undefined' && window.api) {
             window.api.setClickThrough(ct)
@@ -149,6 +145,8 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
   const isHovered = computed(() => snapshot.value.isHovered)
   const isRainbow = computed(() => snapshot.value.isRainbow)
   const showWaterReminder = computed(() => snapshot.value.showWaterReminder)
+  const fishFood = computed(() => snapshot.value.fishFood)
+  const eatingPhase = computed(() => snapshot.value.eatingPhase)
 
   // Style and time-based computed properties
   const fishStyle = computed(() => ({
@@ -183,6 +181,7 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
     isScared: isScared.value,
     isSleeping: isSleeping.value,
     isPooping: isPooping.value,
+    eatingPhase: eatingPhase.value,
     isRainbow: isRainbow.value,
     palette: skinPalette.value
   }))
@@ -286,10 +285,16 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
     engine.updateClickThrough(hitInteractiveAt(e.clientX, e.clientY))
   }
 
-  function persistFishPosition() {
+  function saveFishPosition(pos: Vec) {
     if (typeof window !== 'undefined' && window.api) {
-      window.api.setFishPosition(engine.fishPos.x, engine.fishPos.y)
+      // 贴边追食可能让容器越界，重启时从最近的常态位置恢复。
+      const { x, y } = clampFishPosition(pos.x, pos.y, window.innerWidth, window.innerHeight)
+      window.api.setFishPosition(x, y)
     }
+  }
+
+  function persistFishPosition() {
+    saveFishPosition(engine.fishPos)
   }
 
   let lastTimeCheckKey = ''
@@ -323,7 +328,8 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
         unsubscribeGlobal.push(
           window.api.onAchievementUnlocked((unlocked) => {
             engine.celebrateAchievements(unlocked)
-          })
+          }),
+          window.api.onPlaceFishFood((pos) => engine.placeFishFood(pos))
         )
 
         const config = await window.api.getConfig()
@@ -464,6 +470,8 @@ export function usePetEngine(options: UsePetEngineOptions = {}) {
     isPooping,
     showWaterReminder,
     comboCount,
+    fishFood,
+    eatingPhase,
     poops,
     fishSvgRef,
     interactMessage,

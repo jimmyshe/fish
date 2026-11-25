@@ -6,6 +6,9 @@ export type AchievementId =
   | 'water-5'
   | 'skin-3'
   | 'overwork-5'
+  | 'feed-1'
+  | 'feed-10'
+  | 'wake-up-snack'
   | 'rainbow-combo'
   | 'scared-poop'
   | 'sleep-poop'
@@ -29,6 +32,7 @@ export interface AchievementStats {
   tapCount: number
   waterCount: number
   overworkCount: number
+  fedCount: number
   visitedSkins: string[]
 }
 
@@ -42,6 +46,7 @@ export type AchievementEvent =
   | { type: 'tap' }
   | { type: 'water' }
   | { type: 'overwork' }
+  | { type: 'feed'; placedWhileSleeping: boolean }
   | { type: 'skin'; speciesId: string; paletteId: string }
   | { type: 'rainbow' }
   | { type: 'scared-poop' }
@@ -120,6 +125,24 @@ export const ACHIEVEMENT_LIST: readonly AchievementDef[] = [
     target: 5
   },
   {
+    id: 'feed-1',
+    icon: '🍽️',
+    title: '开饭啦',
+    hint: '让小鱼吃下第一粒鱼粮',
+    description: '吧唧！小鱼尝到了你投喂的第一口。',
+    hidden: false,
+    target: 1
+  },
+  {
+    id: 'feed-10',
+    icon: '🐟',
+    title: '投喂熟客',
+    hint: '让小鱼累计吃下 10 粒鱼粮',
+    description: '第十粒鱼粮下肚，小鱼吃了个痛快。',
+    hidden: false,
+    target: 10
+  },
+  {
     id: 'rainbow-combo',
     icon: '🌈',
     title: '传说中的彩鱼',
@@ -181,6 +204,15 @@ export const ACHIEVEMENT_LIST: readonly AchievementDef[] = [
     description: '周末还在电脑前发光发热，感动中国打工人！',
     hidden: true,
     target: 1
+  },
+  {
+    id: 'wake-up-snack',
+    icon: '🌤️',
+    title: '醒来有饭',
+    hint: '小鱼睡醒时，桌面上会不会有份惊喜？',
+    description: '睡觉时留下的鱼粮，醒来刚好吃上一口。',
+    hidden: true,
+    target: 1
   }
 ] as const
 
@@ -199,6 +231,7 @@ export function createDefaultAchievementState(): AchievementState {
       tapCount: 0,
       waterCount: 0,
       overworkCount: 0,
+      fedCount: 0,
       visitedSkins: ['classic-fish:default']
     },
     unlocked: {}
@@ -248,6 +281,7 @@ export function normalizeAchievementState(raw: unknown): AchievementState {
       tapCount: toNonNegativeInt(rawStats.tapCount),
       waterCount: toNonNegativeInt(rawStats.waterCount),
       overworkCount: toNonNegativeInt(rawStats.overworkCount),
+      fedCount: toNonNegativeInt(rawStats.fedCount),
       visitedSkins: visitedSkins.length > 0 ? visitedSkins : defaults.stats.visitedSkins
     },
     unlocked
@@ -269,6 +303,7 @@ export function applyAchievementEvents(
     tapCount: state.stats.tapCount,
     waterCount: state.stats.waterCount,
     overworkCount: state.stats.overworkCount,
+    fedCount: state.stats.fedCount,
     visitedSkins: [...state.stats.visitedSkins]
   }
   const nextUnlocked: Partial<Record<AchievementId, number>> = { ...state.unlocked }
@@ -310,6 +345,14 @@ export function applyAchievementEvents(
         nextStats.overworkCount += 1
         changed = true
         if (nextStats.overworkCount >= 5) unlock('overwork-5')
+        break
+      }
+      case 'feed': {
+        nextStats.fedCount += 1
+        changed = true
+        if (nextStats.fedCount >= 1) unlock('feed-1')
+        if (nextStats.fedCount >= 10) unlock('feed-10')
+        if (ev.placedWhileSleeping) unlock('wake-up-snack')
         break
       }
       case 'skin': {
@@ -400,6 +443,10 @@ export function getAchievementProgress(
       break
     case 'overwork-5':
       raw = state.stats.overworkCount
+      break
+    case 'feed-1':
+    case 'feed-10':
+      raw = state.stats.fedCount
       break
     default:
       raw = 0

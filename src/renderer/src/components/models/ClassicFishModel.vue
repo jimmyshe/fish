@@ -2,6 +2,7 @@
   <svg
     ref="fishSvgRef"
     class="fish-svg classic-fish"
+    :class="{ 'is-pecking': eatingPhase === 'biting' }"
     viewBox="0 0 120 80"
     xmlns="http://www.w3.org/2000/svg"
   >
@@ -42,7 +43,11 @@
     </template>
 
     <!-- 嘴巴（素材自理局部表情） -->
-    <path v-if="isScared" d="M 98 46 Q 103 50 108 46" stroke="#1a1a2e" stroke-width="2" fill="none" stroke-linecap="round" />
+    <g v-if="eatingPhase" class="classic-eating-mouth" :class="eatingPhase">
+      <ellipse data-fish-mouth cx="102" cy="46" rx="5.5" ry="4.5" fill="#1a1a2e" />
+      <ellipse cx="102" cy="48" rx="3" ry="1.7" fill="#ed8d96" />
+    </g>
+    <path v-else-if="isScared" d="M 98 46 Q 103 50 108 46" stroke="#1a1a2e" stroke-width="2" fill="none" stroke-linecap="round" />
     <path v-else-if="isSleeping" d="M 99 45 Q 103 47 107 45" stroke="#1a1a2e" stroke-width="1.5" fill="none" stroke-linecap="round" />
     <path v-else-if="effectiveMood === 'happy'" d="M 98 42 Q 106 48 98 50" stroke="#1a1a2e" stroke-width="2" fill="none" stroke-linecap="round" />
     <path v-else-if="effectiveMood === 'normal'" d="M 98 45 Q 106 45 98 45" stroke="#1a1a2e" stroke-width="2" fill="none" stroke-linecap="round" />
@@ -116,6 +121,25 @@ const eyeHighlightY = computed(() => eyeY.value - 2)
 </script>
 
 <style scoped>
+.classic-fish { transition: filter 0.3s ease, translate 90ms ease-out; }
+.classic-fish.is-pecking { translate: 3px 0; }
+
+.classic-eating-mouth {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.classic-eating-mouth.biting { animation: classic-bite var(--bite-duration) ease-in-out both; }
+.classic-eating-mouth.chewing { animation: classic-chew calc(var(--chew-duration) / 2) ease-in-out 2 both; }
+
+@keyframes classic-bite {
+  0%, 100% { transform: scaleY(0.19); }
+  38%, 80% { transform: scaleY(1); }
+}
+@keyframes classic-chew {
+  0%, 100% { transform: scaleY(0.19); }
+  48% { transform: scale(1.06, 0.57); }
+}
+
 .fish-tail {
   transform-origin: 18px 40px;
   animation: wag 0.8s ease-in-out infinite;

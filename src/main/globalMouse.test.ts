@@ -1,9 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { UiohookKeyboardEvent, UiohookKey } from 'uiohook-napi'
+import { isFeedShortcutInput } from './feedShortcut'
 import {
   createMouseMoveThrottle,
   isGlobalMouseTrackingSupported,
   MOUSE_MOVE_INTERVAL_MS
 } from './globalMouse'
+
+it('投喂组合和修饰键不算活动，普通按键仍计入', () => {
+  const keys = { Ctrl: 29, Alt: 56, F: 33, G: 34 } as typeof UiohookKey
+  const event: UiohookKeyboardEvent = {
+    type: 4, time: 0, altKey: false, ctrlKey: false, metaKey: false, shiftKey: false, keycode: keys.F
+  }
+  const shortcut = 'Ctrl+Alt+F'
+  const matches = (patch: Partial<UiohookKeyboardEvent>) => isFeedShortcutInput({ ...event, ...patch }, shortcut, keys)
+
+  expect(matches({ keycode: keys.Ctrl })).toBe(true)
+  expect(matches({ keycode: keys.Alt })).toBe(true)
+  expect(matches({ ctrlKey: true, altKey: true })).toBe(true)
+  expect(matches({})).toBe(false)
+  expect(matches({ ctrlKey: true, altKey: true, keycode: keys.G })).toBe(false)
+})
 
 describe('createMouseMoveThrottle', () => {
   beforeEach(() => vi.useFakeTimers())

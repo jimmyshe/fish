@@ -5,6 +5,8 @@ export interface Poop {
   y: number
 }
 
+export const DEFAULT_FEED_SHORTCUT = 'Ctrl+Alt+F'
+
 /** 应用配置：唯一类型来源，main / preload / renderer 共用 */
 export interface Config {
   /** 上班时间（HH:MM），与下班时间共同决定窝囊费线性跳表区间 */
@@ -22,6 +24,8 @@ export interface Config {
   autoLaunch: boolean
   /** 全局鼠标追踪开关；关闭时原生钩子完全停止 */
   globalMouseTracking: boolean
+  /** 在光标位置投放鱼粮的全局快捷键 */
+  feedShortcut: string
   /** 宠物物种 id：决定模型组件形态（默认 'classic-fish'，ADR 0008） */
   speciesId: string
   /** 调色方案 id：物种下的具名配色（默认 'default'，ADR 0008） */
@@ -42,6 +46,7 @@ export const DEFAULT_CONFIG: Config = {
   windowY: -1,
   autoLaunch: false,
   globalMouseTracking: true,
+  feedShortcut: DEFAULT_FEED_SHORTCUT,
   speciesId: 'classic-fish',
   paletteId: 'default',
   skinId: 'default',
